@@ -1,0 +1,8 @@
+# Local agent tooling
+.atl/
+.opencode/
+
+# Paperclip lab runtime data and generated evidence
+.paperclip-lab/
+lab/evidence/
+lab/runs/
