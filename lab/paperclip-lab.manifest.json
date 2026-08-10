@@ -1,0 +1,101 @@
+{
+  "schema": "lab-manifest/v1",
+  "labId": "paperclip-gentle-ai-sdd-lab",
+  "source": {
+    "repository": "https://github.com/paperclipai/paperclip.git",
+    "approvedSha": "6a4e2e1b8c7129f6f913ae458ab0be9cba50bd6a",
+    "root": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip",
+    "remote": "upstream",
+    "pushUrl": "file:///dev/null"
+  },
+  "toolchain": {
+    "node": {
+      "binary": "/opt/homebrew/opt/node@20/bin/node",
+      "minimumVersion": "20.0.0"
+    },
+    "pnpm": {
+      "binary": "/opt/homebrew/bin/pnpm",
+      "version": "9.15.4"
+    },
+    "opencode": {
+      "binary": "/Users/eduardoramirez/.opencode/bin/opencode",
+      "observedVersion": "1.18.11"
+    },
+    "gentleAi": {
+      "binary": "/Users/eduardoramirez/.local/bin/gentle-ai",
+      "observedVersion": "2.4.0-main.2b191b854f10314965255595d452e88e6cade056"
+    }
+  },
+  "runtime": {
+    "paperclipHome": "/Users/eduardoramirez/Library/Application Support/Paperclip/gentle-ai-sdd-lab",
+    "instanceId": "gentle-ai-sdd-lab",
+    "instructionsFile": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/paperclip-lab-agent.md",
+    "dangerouslySkipPermissions": false,
+    "paperclipAgents": ["CEO"],
+    "phaseExecution": "internal-to-ceo"
+  },
+  "highProfileSnapshot": {
+    "capturedAt": "2026-08-10",
+    "sourceCommand": "opencode debug agent sdd-orchestrator-high",
+    "name": "sdd-orchestrator-high",
+    "mode": "primary",
+    "model": "openai/gpt-5.6-terra",
+    "variant": null,
+    "tools": [
+      "apply_patch",
+      "bash",
+      "glob",
+      "grep",
+      "question",
+      "queued_steer",
+      "queued_steer_admin",
+      "read",
+      "skill",
+      "task",
+      "todowrite",
+      "webfetch",
+      "youtube_chapters_fetch_transcript",
+      "youtube_chapters_validate"
+    ],
+    "permissions": {
+      "questionInNonInteractiveRun": "deny",
+      "secretReads": "deny",
+      "externalDirectoriesByDefault": "ask",
+      "taskByDefault": "deny",
+      "allowedSddTasks": [
+        "sdd-apply-high",
+        "sdd-archive-high",
+        "sdd-design-high",
+        "sdd-explore-high",
+        "sdd-init-high",
+        "sdd-onboard-high",
+        "sdd-propose-high",
+        "sdd-spec-high",
+        "sdd-tasks-high",
+        "sdd-verify-high"
+      ]
+    }
+  },
+  "mcpSnapshot": {
+    "capturedAt": "2026-08-10",
+    "sourceCommand": "opencode mcp list",
+    "servers": [
+      { "name": "context7", "status": "connected" },
+      { "name": "engram", "status": "connected" },
+      { "name": "freecad", "status": "connected" },
+      { "name": "gmail_emb", "status": "connected" },
+      { "name": "gmail_personal", "status": "connected" },
+      { "name": "gmail_zeler", "status": "connected" }
+    ]
+  },
+  "generatedPaths": {
+    "evidence": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
+    "runs": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/runs"
+  },
+  "rollbackAllowlist": [
+    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
+    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/runs",
+    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/.paperclip-lab",
+    "/Users/eduardoramirez/Library/Application Support/Paperclip/gentle-ai-sdd-lab"
+  ]
+}
