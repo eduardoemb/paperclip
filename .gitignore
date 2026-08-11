@@ -69,3 +69,13 @@ tests/storybook-visual/playwright-report/
 .superpowers/
 .claude/worktrees/
 .herenow
+
+# Paperclip lab — Gate A entries retained (union with upstream rules)
+.atl/
+.opencode/
+.paperclip-lab/
+lab/evidence/
+lab/runs/
+
+# Gate B union additions
+packages/*/dist
