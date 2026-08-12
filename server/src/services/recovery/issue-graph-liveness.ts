@@ -1,5 +1,6 @@
 import { getAgentWorkEligibility, isAgentInvokable } from "@paperclipai/shared";
 import { buildIssueGraphLivenessIncidentKey } from "./origins.js";
+import { issueStatusResolvesDependencyEdge } from "../issue-dependency-resolution.js";
 
 export type IssueLivenessSeverity = "warning" | "critical";
 
@@ -493,8 +494,7 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
       blocked &&
       blocker.companyId === relation.companyId &&
       blocked.companyId === relation.companyId &&
-      blocker.status !== "done" &&
-      blocker.status !== "cancelled" &&
+      !issueStatusResolvesDependencyEdge(blocker.status) &&
       blocked.status === "blocked"
     ) {
       unresolvedBlockers.add(blocker.id);
@@ -598,21 +598,6 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
       includeStalledAssignee: true,
     });
 
-    if (blocker.status === "cancelled") {
-      return finding({
-        issue: source,
-        state: "blocked_by_cancelled_issue",
-        reason: `${issueLabel(source)} is still blocked by cancelled issue ${issueLabel(blocker)}.`,
-        dependencyPath,
-        recoveryIssue: blocker,
-        recommendedOwnerCandidateAgentIds: ownerCandidates.map((candidate) => candidate.agentId),
-        recommendedOwnerCandidates: ownerCandidates,
-        recommendedAction:
-          `Inspect ${issueLabel(blocker)} and either remove it from ${issueLabel(source)}'s blockers or replace it with an actionable unblock issue.`,
-        blockerIssueId: blocker.id,
-      });
-    }
-
     if (hasExplicitWaitingPath(blocker)) return null;
 
     if (blocker.status === "in_review") {
@@ -688,7 +673,7 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
     for (const relation of relations) {
       if (relation.companyId !== current.companyId || relation.companyId !== source.companyId) continue;
       const blocker = issuesById.get(relation.blockerIssueId);
-      if (!blocker || blocker.companyId !== source.companyId || blocker.status === "done") continue;
+      if (!blocker || blocker.companyId !== source.companyId || issueStatusResolvesDependencyEdge(blocker.status)) continue;
       const path = [...dependencyPath, blocker];
 
       if (blocker.status === "blocked") {
@@ -708,7 +693,7 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
     const hasUnresolvedBlockerEdge = (blockersByBlockedIssueId.get(issue.id) ?? []).some((relation) => {
       if (relation.companyId !== issue.companyId) return false;
       const blocker = issuesById.get(relation.blockerIssueId);
-      return Boolean(blocker && blocker.companyId === issue.companyId && blocker.status !== "done");
+      return Boolean(blocker && blocker.companyId === issue.companyId && !issueStatusResolvesDependencyEdge(blocker.status));
     });
     const shouldInspectBlockedChain = issue.status === "blocked" || (
       issue.status !== "done" &&
