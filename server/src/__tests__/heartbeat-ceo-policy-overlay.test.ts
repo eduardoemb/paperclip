@@ -2,15 +2,25 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { agents, companies, createDb } from "@paperclipai/db";
+import {
+  agentWakeupRequests,
+  agents,
+  budgetPolicies,
+  companies,
+  costEvents,
+  createDb,
+  issues,
+  issueTreeHolds,
+} from "@paperclipai/db";
 import { sessionCodec } from "@paperclipai/adapter-opencode-local/server";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { heartbeatService } from "../services/heartbeat.ts";
+import { heartbeatService, resolveExecutionRunAdapterConfig } from "../services/heartbeat.ts";
+import { resolveCoreTrustPreset } from "../services/trust-preset-resolver.js";
 import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
 
 const capturedAdapterInputs: Array<{ runId: string; [key: string]: unknown }> = [];
@@ -82,12 +92,17 @@ describeEmbeddedPostgres("heartbeat CEO execution policy overlay", () => {
       TRUNCATE TABLE
         "activity_log",
         "agent_task_sessions",
+        "budget_policies",
+        "cost_events",
         "environment_leases",
         "environments",
         "heartbeat_run_events",
         "heartbeat_runs",
         "agent_wakeup_requests",
         "agent_runtime_state",
+        "issues",
+        "issue_tree_holds",
+        "issue_tree_hold_members",
         "agents",
         "companies"
       RESTART IDENTITY CASCADE
@@ -109,6 +124,7 @@ describeEmbeddedPostgres("heartbeat CEO execution policy overlay", () => {
   async function seedCompanyWithAgent(input: {
     role: string;
     ceoExecutionPolicy?: string;
+    agentStatus?: string;
   }) {
     const companyId = randomUUID();
     const agentId = randomUUID();
@@ -127,13 +143,26 @@ describeEmbeddedPostgres("heartbeat CEO execution policy overlay", () => {
       companyId,
       name: `${input.role} Agent`,
       role: input.role,
-      status: "idle",
+      status: input.agentStatus ?? "idle",
       adapterType: "opencode_local",
       adapterConfig: {},
       runtimeConfig: {},
       permissions: {},
     });
     return { companyId, agentId };
+  }
+
+  async function seedIssue(companyId: string, input: { id?: string; status?: string }) {
+    const issueId = input.id ?? randomUUID();
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "CEO policy enforcement issue",
+      status: input.status ?? "todo",
+      priority: "medium",
+      responsibleUserId: "responsible-user",
+    });
+    return issueId;
   }
 
   async function waitForRunToFinish(
@@ -224,5 +253,167 @@ describeEmbeddedPostgres("heartbeat CEO execution policy overlay", () => {
       .toContain("MAY execute");
     expect(adapterInputForRun(runB).context.paperclipWake?.ceoExecutionPolicy?.overlay)
       .toContain("MUST delegate");
+  });
+
+  describe("direct_allowed cannot evade governed control-plane seams", () => {
+    it("denies cross-company issue access (authorization seam) for a direct_allowed CEO", async () => {
+      const heartbeat = heartbeatService(db);
+      const { agentId } = await seedCompanyWithAgent({
+        role: "ceo",
+        ceoExecutionPolicy: "direct_allowed",
+      });
+      const otherCompanyId = randomUUID();
+      await db.insert(companies).values({
+        id: otherCompanyId,
+        name: `Other ${otherCompanyId.slice(0, 8)}`,
+        issuePrefix: `Q${otherCompanyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+        defaultResponsibleUserId: "responsible-user",
+      });
+      const foreignIssueId = await seedIssue(otherCompanyId, { id: randomUUID() });
+
+      const result = await heartbeat.invoke(
+        agentId,
+        "on_demand",
+        { issueId: foreignIssueId, taskKey: "foreign-wake" },
+        "manual",
+      );
+      expect(result).toBeNull();
+      expect(capturedAdapterInputs).toHaveLength(0);
+      const wake = await db
+        .select({ reason: agentWakeupRequests.reason })
+        .from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.agentId, agentId));
+      expect(wake.map((row) => row.reason)).toContain("issue_execution_issue_not_found");
+    });
+
+    it("keeps the board-approval gate (approval seam) binding for a direct_allowed CEO", async () => {
+      const heartbeat = heartbeatService(db);
+      const { agentId } = await seedCompanyWithAgent({
+        role: "ceo",
+        ceoExecutionPolicy: "direct_allowed",
+        agentStatus: "pending_approval",
+      });
+      await expect(
+        heartbeat.invoke(agentId, "on_demand", { taskKey: "unapproved-wake" }, "manual"),
+      ).rejects.toMatchObject({
+        status: 409,
+        details: expect.objectContaining({ reason: "pending_approval" }),
+      });
+      expect(capturedAdapterInputs).toHaveLength(0);
+    });
+
+    it("keeps budget hard-stops (budget seam) binding for a direct_allowed company", async () => {
+      const heartbeat = heartbeatService(db);
+      const { companyId, agentId } = await seedCompanyWithAgent({
+        role: "ceo",
+        ceoExecutionPolicy: "direct_allowed",
+      });
+      await db.insert(budgetPolicies).values({
+        companyId,
+        scopeType: "company",
+        scopeId: companyId,
+        metric: "billed_cents",
+        windowKind: "calendar_month_utc",
+        amount: 100,
+        hardStopEnabled: true,
+        isActive: true,
+      });
+      await db.insert(costEvents).values({
+        companyId,
+        agentId,
+        provider: "test",
+        model: "test-model",
+        costCents: 150,
+        occurredAt: new Date(),
+      });
+      await expect(
+        heartbeat.invoke(agentId, "on_demand", { taskKey: "over-budget-wake" }, "manual"),
+      ).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("budget"),
+        details: expect.objectContaining({ scopeType: "company" }),
+      });
+      expect(capturedAdapterInputs).toHaveLength(0);
+    });
+
+    it("keeps pause holds (pause seam) binding for a direct_allowed CEO", async () => {
+      const heartbeat = heartbeatService(db);
+      const { companyId, agentId } = await seedCompanyWithAgent({
+        role: "ceo",
+        ceoExecutionPolicy: "direct_allowed",
+      });
+      const issueId = await seedIssue(companyId, { status: "in_progress" });
+      await db.insert(issueTreeHolds).values({
+        companyId,
+        rootIssueId: issueId,
+        mode: "pause",
+        status: "active",
+        reason: "Test pause hold",
+        createdByActorType: "user",
+        createdByUserId: "test-user",
+      });
+
+      const result = await heartbeat.invoke(
+        agentId,
+        "on_demand",
+        { issueId, taskKey: "paused-wake" },
+        "manual",
+      );
+      expect(result).toBeNull();
+      expect(capturedAdapterInputs).toHaveLength(0);
+      const wake = await db
+        .select({ reason: agentWakeupRequests.reason })
+        .from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.agentId, agentId));
+      expect(wake.map((row) => row.reason)).toContain("issue_tree_hold_active");
+    });
+
+    it("keeps low-trust review restrictions (low-trust seam) binding for direct_allowed companies", async () => {
+      const { companyId, agentId } = await seedCompanyWithAgent({
+        role: "ceo",
+        ceoExecutionPolicy: "direct_allowed",
+      });
+      const issueId = randomUUID();
+      const resolution = resolveCoreTrustPreset({
+        companyId,
+        issue: {
+          companyId,
+          executionPolicy: {
+            authorizationPolicy: {
+              trustPreset: "low_trust_review",
+              trustBoundary: {
+                mode: "low_trust_review",
+                companyId,
+                issueIds: [issueId],
+                allowedAgentIds: [agentId],
+                allowedSecretBindingIds: [],
+              },
+            },
+          },
+        },
+      });
+      expect(resolution.kind).toBe("low_trust_review");
+
+      const secretsSvc = {
+        resolveEnvBindings: vi.fn(async () => ({ env: {}, secretKeys: new Set<string>(), manifest: [] })),
+        resolveAdapterConfigForRuntime: vi.fn(async () => ({ config: {}, secretKeys: new Set<string>(), manifest: [] })),
+        collectMissingRuntimeBindings: vi.fn(async () => []),
+        collectMissingAdapterConfigRuntimeBindings: vi.fn(async () => []),
+      } as Parameters<typeof resolveExecutionRunAdapterConfig>[0]["secretsSvc"];
+
+      await expect(
+        resolveExecutionRunAdapterConfig({
+          companyId,
+          agentId,
+          executionRunConfig: { env: { API_KEY: "inline-secret" } },
+          secretsSvc,
+          trustPreset: resolution,
+        }),
+      ).rejects.toMatchObject({
+        status: 422,
+        details: expect.objectContaining({ code: "low_trust_inline_sensitive_env_denied" }),
+      });
+    });
   });
 });
