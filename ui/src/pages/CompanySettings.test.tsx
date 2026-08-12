@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AGENT_ADAPTER_TYPES, getEnvironmentCapabilities } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanyEnvironments } from "./CompanyEnvironments";
+import { CompanySettings } from "./CompanySettings";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockCompaniesApi = vi.hoisted(() => ({
@@ -44,6 +45,11 @@ const mockSecretsApi = vi.hoisted(() => ({
 const mockPushToast = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockSetSelectedCompanyId = vi.hoisted(() => vi.fn());
+
+const mockCompanyState = vi.hoisted(() => ({
+  companies: [{ id: "company-1", name: "Paperclip", issuePrefix: "PAP" }],
+  selectedCompany: null as Record<string, unknown> | null,
+}));
 
 vi.mock("../api/companies", () => ({
   companiesApi: mockCompaniesApi,
@@ -85,8 +91,8 @@ vi.mock("../context/ToastContext", () => ({
 
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
-    companies: [{ id: "company-1", name: "Paperclip", issuePrefix: "PAP" }],
-    selectedCompany: null,
+    companies: mockCompanyState.companies,
+    selectedCompany: mockCompanyState.selectedCompany,
     selectedCompanyId: "company-1",
     setSelectedCompanyId: mockSetSelectedCompanyId,
   }),
@@ -101,6 +107,12 @@ class ResizeObserverStub {
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).ResizeObserver = (globalThis as any).ResizeObserver ?? ResizeObserverStub;
+// jsdom does not implement pointer capture; Radix Select calls it on the
+// trigger during pointerdown.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).Element.prototype.hasPointerCapture ??= function hasPointerCapture() {
+  return false;
+};
 
 async function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> = undefined;
@@ -394,6 +406,140 @@ describe("CompanyEnvironments", () => {
     const templateInput = Array.from(dialog?.querySelectorAll("input") ?? [])
       .find((input) => (input as HTMLInputElement).value === "saved-template") as HTMLInputElement | undefined;
     expect(templateInput?.value).toBe("saved-template");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});
+
+describe("CompanySettings CEO execution policy", () => {
+  let container: HTMLDivElement;
+
+  const baseCompany = {
+    id: "company-1",
+    name: "Paperclip",
+    description: null,
+    brandColor: null,
+    logoUrl: null,
+    attachmentMaxBytes: 1024 * 1024,
+    issuePrefix: "PAP",
+    requireBoardApprovalForNewAgents: false,
+    interactionResolverGovernance: {},
+    status: "active",
+  };
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    mockCompanyState.selectedCompany = { ...baseCompany };
+    mockCompaniesApi.update.mockResolvedValue({
+      ...baseCompany,
+      ceoExecutionPolicy: "direct_allowed",
+    });
+  });
+
+  afterEach(() => {
+    mockCompanyState.selectedCompany = null;
+    container.remove();
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+  });
+
+  function renderCompanySettings() {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/company/settings"]}>
+          <TooltipProvider>
+            <CompanySettings />
+          </TooltipProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  function ceoPolicyTrigger(): HTMLElement | null {
+    return container.querySelector<HTMLElement>('[data-testid="company-settings-ceo-policy-select"]');
+  }
+
+  async function openCeoPolicySelect() {
+    const trigger = ceoPolicyTrigger();
+    expect(trigger).not.toBeNull();
+    await act(async () => {
+      trigger!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  }
+
+  function ceoPolicyOption(label: string): Element | undefined {
+    return Array.from(document.querySelectorAll('[role="option"]')).find(
+      (option) => option.textContent?.trim() === label,
+    );
+  }
+
+  it("shows the delegate-first default when the company policy is unset", async () => {
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(renderCompanySettings());
+    });
+    await flushReact();
+
+    expect(ceoPolicyTrigger()?.textContent).toContain("Delegate first");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("persists a direct_allowed selection through the board companies API", async () => {
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(renderCompanySettings());
+    });
+    await flushReact();
+
+    await openCeoPolicySelect();
+    const directOption = ceoPolicyOption("Direct allowed");
+    expect(directOption).toBeTruthy();
+    await act(async () => {
+      directOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(mockCompaniesApi.update).toHaveBeenCalledWith("company-1", {
+      ceoExecutionPolicy: "direct_allowed",
+    });
+    // The confirmed server value is reflected back into the select.
+    await waitForAssertion(() => {
+      expect(ceoPolicyTrigger()?.textContent).toContain("Direct allowed");
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("surfaces the CEO policy mutation error", async () => {
+    mockCompaniesApi.update.mockRejectedValue(new Error("Failed to save CEO execution policy"));
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(renderCompanySettings());
+    });
+    await flushReact();
+
+    await openCeoPolicySelect();
+    const directOption = ceoPolicyOption("Direct allowed");
+    expect(directOption).toBeTruthy();
+    await act(async () => {
+      directOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Failed to save CEO execution policy");
+    });
 
     await act(async () => {
       root.unmount();
