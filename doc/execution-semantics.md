@@ -166,6 +166,8 @@ Session compatibility is decided by the control plane (heartbeat), not by each a
 - `config_changed`, `compacted`, `explicit_clear` — the wake already reset the session for a configuration change, session compaction, or an explicit fresh-session request; the adapter starts fresh.
 - `unknown_session` — the adapter attempted to resume, but the agent runtime reported that the stored session id no longer exists (for example, ephemeral storage); the adapter retries once with a fresh session and returns `clearSession: true` so the control plane removes the stale row.
 
+The adapter classifies a session as unknown only on unambiguous evidence: explicit "unknown session" wording, "session ... not found" phrasing, or a missing OpenCode session storage file. Generic `NotFoundError` or bare "no session" phrasing can come from transient/network failures and never rotates a healthy session.
+
 Local adapters keep a defensive cwd/identity check in addition to the core decision, so direct adapter invocations outside the heartbeat remain safe. Session rotation for identity reasons never retries on connectivity loss; the fallback only fires for a reported unknown session.
 
 ## 6. Parent/Sub-Issue vs Blockers
