@@ -22,6 +22,14 @@ export interface AdapterRuntime {
   sessionParams: Record<string, unknown> | null;
   sessionDisplayId: string | null;
   taskKey: string | null;
+  /**
+   * Core-resolved session resume decision for this wake: `compatible`,
+   * `execution_target_mismatch`, `missing_execution_target_identity`,
+   * `config_changed`, `compacted`, `explicit_clear`, `unknown_session`, or null
+   * when no stored session was considered. Adapters execute this decision; they
+   * do not re-derive execution-target compatibility from adapter params alone.
+   */
+  resumeDecision?: string | null;
 }
 
 // ---------------------------------------------------------------------------

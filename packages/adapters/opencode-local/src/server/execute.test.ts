@@ -1,6 +1,31 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ensureRemoteOpenCodeModelConfiguredAndAvailable } from "./execute.js";
+import { coreAllowsSessionResume, ensureRemoteOpenCodeModelConfiguredAndAvailable } from "./execute.js";
+
+describe("coreAllowsSessionResume", () => {
+  it("allows resume when the core decision is compatible", () => {
+    expect(coreAllowsSessionResume("compatible")).toBe(true);
+  });
+
+  it("allows resume when no core decision is present (direct adapter invocation)", () => {
+    expect(coreAllowsSessionResume(null)).toBe(true);
+    expect(coreAllowsSessionResume("")).toBe(true);
+  });
+
+  it("refuses resume when the core rotated the session for execution-target mismatch", () => {
+    expect(coreAllowsSessionResume("execution_target_mismatch")).toBe(false);
+  });
+
+  it("refuses resume when the core rotated a legacy session without target identity", () => {
+    expect(coreAllowsSessionResume("missing_execution_target_identity")).toBe(false);
+  });
+
+  it("refuses resume when the core cleared, compacted, or config-reset the session", () => {
+    expect(coreAllowsSessionResume("explicit_clear")).toBe(false);
+    expect(coreAllowsSessionResume("compacted")).toBe(false);
+    expect(coreAllowsSessionResume("config_changed")).toBe(false);
+  });
+});
 
 describe("ensureRemoteOpenCodeModelConfiguredAndAvailable", () => {
   afterEach(() => {

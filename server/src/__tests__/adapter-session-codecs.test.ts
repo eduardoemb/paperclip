@@ -127,6 +127,62 @@ describe("adapter session codecs", () => {
     expect(opencodeSessionCodec.getDisplayId?.(serialized ?? null)).toBe("opencode-session-1");
   });
 
+  it("preserves opencode remote execution identity for compatibility checks", () => {
+    const parsed = opencodeSessionCodec.deserialize({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+      remoteExecution: {
+        transport: "sandbox",
+        providerKey: "provider-1",
+        environmentId: "environment-1",
+        leaseId: "lease-1",
+        remoteCwd: "/workspace",
+      },
+    });
+
+    expect(parsed).toEqual({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+      remoteExecution: {
+        transport: "sandbox",
+        providerKey: "provider-1",
+        environmentId: "environment-1",
+        leaseId: "lease-1",
+        remoteCwd: "/workspace",
+      },
+    });
+
+    const serialized = opencodeSessionCodec.serialize(parsed);
+    expect(serialized).toEqual({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+      remoteExecution: {
+        transport: "sandbox",
+        providerKey: "provider-1",
+        environmentId: "environment-1",
+        leaseId: "lease-1",
+        remoteCwd: "/workspace",
+      },
+    });
+    expect(opencodeSessionCodec.getDisplayId?.(serialized ?? null)).toBe("opencode-session-1");
+  });
+
+  it("drops empty opencode remote execution identity without breaking resume", () => {
+    const parsed = opencodeSessionCodec.deserialize({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+      remoteExecution: null,
+    });
+    expect(parsed).toEqual({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+    });
+    expect(opencodeSessionCodec.serialize(parsed)).toEqual({
+      sessionId: "opencode-session-1",
+      cwd: "/tmp/opencode",
+    });
+  });
+
   it("normalizes cursor session params with cwd", () => {
     const parsed = cursorSessionCodec.deserialize({
       session_id: "cursor-session-1",

@@ -1,0 +1,1 @@
+ALTER TABLE "agent_task_sessions" ADD COLUMN "execution_target_identity_json" jsonb;
