@@ -4,7 +4,7 @@
   "source": {
     "repository": "https://github.com/paperclipai/paperclip.git",
     "approvedSha": "6a4e2e1b8c7129f6f913ae458ab0be9cba50bd6a",
-    "mergeSha": "f59bc5bec399b13b332a70ad45337f2c5cd5a4c7",
+    "mergeSha": "4d1d35893eb86ea4ed6cde1316588857f2a0748c",
     "treeIdentity": "43c60f4c1a0b1610070ce407addbed2482d9ee68",
     "root": "/home/eduardo/repositorios/paperclip",
     "remote": "upstream",
