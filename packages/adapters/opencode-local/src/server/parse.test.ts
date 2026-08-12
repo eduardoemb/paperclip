@@ -75,3 +75,38 @@ describe("parseOpenCodeJsonl", () => {
     expect(isOpenCodeUnknownSessionError("all good", "")).toBe(false);
   });
 });
+
+describe("isOpenCodeUnknownSessionError requires unambiguous session evidence", () => {
+  it("does not classify a transient network NotFoundError as an unknown session", () => {
+    expect(isOpenCodeUnknownSessionError("", "NotFoundError: network resource unavailable")).toBe(false);
+  });
+
+  it("does not classify a JSONL error event with a NotFoundError name as an unknown session", () => {
+    const stdout = JSON.stringify({
+      type: "error",
+      error: { name: "NotFoundError", message: "network resource unavailable" },
+    });
+    expect(isOpenCodeUnknownSessionError(stdout, "")).toBe(false);
+  });
+
+  it("does not classify bare no-session phrasing as an unknown session", () => {
+    expect(isOpenCodeUnknownSessionError("no session", "")).toBe(false);
+    expect(isOpenCodeUnknownSessionError("", "no session available right now")).toBe(false);
+  });
+
+  it("classifies an existential no-session claim as unknown", () => {
+    expect(isOpenCodeUnknownSessionError("Error: no session found with id s_123", "")).toBe(true);
+    expect(isOpenCodeUnknownSessionError("", "no session exists for s_123")).toBe(true);
+  });
+
+  it("keeps the documented session-specific evidence classified as unknown", () => {
+    expect(isOpenCodeUnknownSessionError("Session not found: s_123", "")).toBe(true);
+    expect(isOpenCodeUnknownSessionError("", "unknown session id")).toBe(true);
+    expect(
+      isOpenCodeUnknownSessionError(
+        "",
+        "NotFoundError: Resource not found: /Users/test/.local/share/opencode/storage/session/project/ses_missing.json",
+      ),
+    ).toBe(true);
+  });
+});
