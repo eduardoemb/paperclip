@@ -66,6 +66,11 @@ import {
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
 } from "@paperclipai/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
+import {
+  evaluateLabCompletion,
+  LAB_COMPLETION_LABEL_ENV,
+  loadLabCompletionEvidence,
+} from "./lab-completion-guard.js";
 import { logger } from "../middleware/logger.js";
 import { parseObject } from "../adapters/utils.js";
 import {
@@ -7606,6 +7611,7 @@ export function issueService(db: Db) {
         patch.executionLockedAt = null;
       }
 
+      const shouldEvaluateLabCompletion = patch.status === "done" && existing.status !== "done";
       const runUpdate = async (tx: any) => {
         // The receipt baseline must be read under the same row lock as the
         // write. Otherwise a concurrent update can be mistaken for a change
@@ -7618,7 +7624,7 @@ export function issueService(db: Db) {
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!receiptExisting) return null;
         const [previousLabelsByIssueId, previousRelationSummaries] = await Promise.all([
-          nextLabelIds !== undefined
+          nextLabelIds !== undefined || shouldEvaluateLabCompletion
             ? labelMapForIssues(tx, [id])
             : Promise.resolve(new Map<string, IssueLabelRow[]>()),
           blockedByIssueIds !== undefined
@@ -7634,6 +7640,39 @@ export function issueService(db: Db) {
             issueData.projectId !== undefined ? issueData.projectId : existing.projectId,
           ),
         ]);
+
+        if (shouldEvaluateLabCompletion) {
+          const labLabelName = process.env[LAB_COMPLETION_LABEL_ENV]?.trim();
+          if (labLabelName) {
+            const labLabelActive = (previousLabelsByIssueId.get(id) ?? [])
+              .some((label) => label.name === labLabelName);
+            if (labLabelActive) {
+              const evidence = await loadLabCompletionEvidence(tx, {
+                issueId: id,
+                companyId: existing.companyId,
+              });
+              const newestEvidenceAt = evidence.workProducts.reduce<Date | undefined>(
+                (latest, workProduct) => !latest || workProduct.createdAt > latest
+                  ? workProduct.createdAt
+                  : latest,
+                undefined,
+              );
+              const result = evaluateLabCompletion({
+                issueId: id,
+                companyId: existing.companyId,
+                labLabelActive,
+                ...evidence,
+                newestEvidenceAt,
+              });
+              if (!result.allowed) {
+                throw conflict("Lab completion requirements are not satisfied", {
+                  code: "lab_completion_blocked",
+                  missing: result.missing,
+                });
+              }
+            }
+          }
+        }
 
         patch.goalId = resolveNextIssueGoalId({
           currentProjectId: existing.projectId,
