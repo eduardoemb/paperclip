@@ -288,6 +288,10 @@ import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.j
 import { environmentRuntimeService } from "./environment-runtime.js";
 import { skillVersionSelectionMap } from "./runtime-skill-selections.js";
 import { resolveSessionResumeDecision } from "./session-resume-decision.js";
+import {
+  buildCeoExecutionPolicyOverlay,
+  resolveCeoExecutionPolicy,
+} from "./company-ceo-execution-policy.js";
 import { environmentRunOrchestrator } from "./environment-run-orchestrator.js";
 import { isUnsafeSessionWorkspaceCwd } from "./session-workspace-cwd.js";
 import {
@@ -6988,6 +6992,14 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       .from(agents)
       .where(eq(agents.id, agentId))
       .then((rows) => rows[0] ?? null);
+  }
+
+  async function getCompanyCeoExecutionPolicy(companyId: string): Promise<string> {
+    return db
+      .select({ ceoExecutionPolicy: companies.ceoExecutionPolicy })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0]?.ceoExecutionPolicy ?? "delegate_first");
   }
 
   async function getAgentInvokability(agent: typeof agents.$inferSelect | null | undefined) {
@@ -13882,6 +13894,32 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       context[PAPERCLIP_WAKE_PAYLOAD_KEY] = paperclipWakePayload;
     } else {
       delete context[PAPERCLIP_WAKE_PAYLOAD_KEY];
+    }
+    // Authoritative run-time CEO execution policy overlay. The company policy
+    // is resolved per run and rendered into the wake payload so every CEO
+    // heartbeat carries it — including content-less wakes — without rewriting
+    // the materialized instruction bundles. Non-CEO agents never receive it.
+    if (agent.role === "ceo") {
+      const ceoPolicy = resolveCeoExecutionPolicy(
+        await getCompanyCeoExecutionPolicy(agent.companyId),
+      );
+      const ceoPolicyOverlay = buildCeoExecutionPolicyOverlay({
+        policy: ceoPolicy,
+        companyId: agent.companyId,
+        agentId: agent.id,
+      });
+      context.paperclipCeoExecutionPolicy = {
+        policy: ceoPolicy,
+        companyId: agent.companyId,
+        overlay: ceoPolicyOverlay,
+      };
+      const existingWakePayload = parseObject(context[PAPERCLIP_WAKE_PAYLOAD_KEY]);
+      context[PAPERCLIP_WAKE_PAYLOAD_KEY] = {
+        ...existingWakePayload,
+        ceoExecutionPolicy: { policy: ceoPolicy, overlay: ceoPolicyOverlay },
+      };
+    } else {
+      delete context.paperclipCeoExecutionPolicy;
     }
     const taskMarkdownInput = {
       issue: issueRef

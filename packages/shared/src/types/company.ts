@@ -1,4 +1,5 @@
 import type {
+  CeoExecutionPolicy,
   CompanyStatus,
   IssueThreadInteractionKind,
   IssueThreadInteractionResolverPolicy,
@@ -36,6 +37,7 @@ export interface Company {
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;
+  ceoExecutionPolicy: CeoExecutionPolicy;
   createdAt: Date;
   updatedAt: Date;
 }
