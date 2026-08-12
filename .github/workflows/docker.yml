@@ -3,7 +3,7 @@ name: Docker
 on:
   push:
     branches:
-      - "master"
+      - "main"
     tags:
       - "v*"
 
@@ -163,7 +163,7 @@ jobs:
           # cache is capped at 10GB per repo, and two multi-arch mode=max jobs
           # evict each other, so most builds ran effectively cold. The cache
           # ref lives in ghcr next to the image and is written only by this
-          # workflow (docker.yml runs on master/tag pushes, never on PRs).
+          # workflow (docker.yml runs on main/tag pushes, never on PRs).
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
           tags: ${{ steps.meta.outputs.tags }}
