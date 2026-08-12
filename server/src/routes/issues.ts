@@ -171,6 +171,7 @@ import {
   buildIssueBlockersResolvedWakeIdempotencyKey,
   findExistingIssueBlockersResolvedWake,
 } from "../services/issue-dependency-wakeups.js";
+import { issueStatusResolvesDependencyEdge } from "../services/issue-dependency-resolution.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { executionWorkspaceService as executionWorkspaceServiceDirect } from "../services/execution-workspaces.js";
 import { decisionTrainingService } from "../services/decision-training.js";
@@ -949,7 +950,7 @@ function buildIssueBlockerDiagnosticsResponse(input: {
       ...blocker,
       isUnresolved,
       isPendingFinalize,
-      isDependencyReady: blocker.status === "done" && !isPendingFinalize,
+      isDependencyReady: issueStatusResolvesDependencyEdge(blocker.status) && !isPendingFinalize,
       flags,
     };
   });
@@ -1016,13 +1017,6 @@ function buildIssueBlockerDiagnosis(input: {
     return `${blockerDiagnosticLabel(input.issue)} is waiting for ${blockerDiagnosticLabel(
       pendingFinalize,
     )} to finish workspace finalization.`;
-  }
-
-  const cancelled = input.blockers.find((blocker) => blocker.status === "cancelled");
-  if (cancelled) {
-    return `${blockerDiagnosticLabel(input.issue)} is blocked by ${blockerDiagnosticLabel(
-      cancelled,
-    )}, which is cancelled; cancelled blockers do not resolve until the blocker relation is removed or replaced.`;
   }
 
   const unresolved = input.blockers.find((blocker) => blocker.isUnresolved);
@@ -1264,13 +1258,6 @@ function buildIssueWakeDiagnosis(input: {
     return `No wake row exists for ${blockerDiagnosticLabel(input.issue)} in the bounded window. ${blockerDiagnosticLabel(
       input.issue,
     )} is waiting for ${blockerDiagnosticLabel(pendingFinalize)} to finish workspace finalization, so issue_blockers_resolved has not fired.`;
-  }
-
-  const cancelled = blockerDiagnostics.blockers.find((blocker) => blocker.status === "cancelled");
-  if (cancelled) {
-    return `No wake row exists for ${blockerDiagnosticLabel(input.issue)} in the bounded window. ${blockerDiagnosticLabel(
-      input.issue,
-    )} is blocked by ${blockerDiagnosticLabel(cancelled)}, which is cancelled; cancelled blockers do not fire issue_blockers_resolved.`;
   }
 
   const unresolved = blockerDiagnostics.blockers.find((blocker) => blocker.isUnresolved);
@@ -9543,7 +9530,7 @@ export function issueRoutes(
         blockerIssueIds: string[];
         source: string;
         mutation: string;
-      }) => {
+      }): Promise<boolean> => {
         const idempotencyKey = buildIssueBlockersResolvedWakeIdempotencyKey({
           dependentIssueId: input.dependentIssueId,
           resolvedBlockerIssueId: input.resolvedBlockerIssueId,
@@ -9553,7 +9540,7 @@ export function issueRoutes(
             companyId: issue.companyId,
             idempotencyKey,
           });
-          if (existingWake) return;
+          if (existingWake) return false;
         } catch (err) {
           logger.warn(
             { err, issueId: input.dependentIssueId, idempotencyKey },
@@ -9582,6 +9569,7 @@ export function issueRoutes(
             blockerIssueIds: input.blockerIssueIds,
           },
         });
+        return true;
       };
 
       if (executionStageWakeup) {
@@ -9735,6 +9723,35 @@ export function issueRoutes(
             blockerIssueIds: dependent.blockerIssueIds,
             source: "issue.blockers_resolved",
             mutation: "blocker_done",
+          });
+        }
+      }
+
+      if (existing.status !== "cancelled" && issue.status === "cancelled") {
+        const dependents = await svc.listWakeableBlockedDependents(issue.id);
+        for (const dependent of dependents) {
+          const wakeupAdded = await addDependencyResolvedWakeup({
+            agentId: dependent.assigneeAgentId,
+            dependentIssueId: dependent.id,
+            resolvedBlockerIssueId: issue.id,
+            blockerIssueIds: dependent.blockerIssueIds,
+            source: "issue.blocker_resolved_by_cancellation",
+            mutation: "blocker_cancelled",
+          });
+          if (!wakeupAdded) continue;
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: "system",
+            actorId: "issue_update",
+            agentId: null,
+            runId: actor.runId,
+            agentApiKeyId: actor.agentApiKeyId,
+            action: "issue.blocker_resolved_by_cancellation",
+            entityType: "issue",
+            entityId: dependent.id,
+            details: {
+              blockerIssueId: issue.id,
+            },
           });
         }
       }

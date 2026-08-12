@@ -210,9 +210,9 @@ Use it for:
 - explicit waiting relationships
 - automatic wakeups when all blockers resolve
 
-Blocked issues should stay idle while blockers remain unresolved. Paperclip should not create a queued heartbeat run for that issue until the final blocker is done and the `issue_blockers_resolved` wake can start real work.
+Blocked issues should stay idle while blockers remain unresolved. Paperclip should not create a queued heartbeat run for that issue until the final blocker is done or cancelled and the `issue_blockers_resolved` wake can start real work.
 
-`cancelled` is terminal for the blocker issue itself, but it does not satisfy the dependency. A cancelled blocker edge remains unresolved until the edge is removed or replaced, and Paperclip must surface blocker attention on the dependent regardless of whether that dependent is currently displayed as `blocked`, `todo`, `backlog`, or another non-terminal agent-owned status.
+`done` and `cancelled` both resolve the blocker edge across every projection — readiness, checkout, scheduler dispatch, plugin wake guards, blocker attention, and liveness classification. A `done` blocker can additionally hold its dependents until its execution workspace records a successful `workspace_finalize`; a `cancelled` blocker never has a workspace to sync back, so it unblocks immediately. Cancelling a blocker wakes wakeable dependents with the existing idempotent `issue_blockers_resolved:{dependent}:{blocker}` wake and records an `issue.blocker_resolved_by_cancellation` activity entry per affected edge; a dependent still displayed as `blocked` after all blockers resolve is a stale blocker hold surfaced by diagnostics.
 
 If a parent is truly waiting on a child, model that with blockers. Do not rely on the parent/child relationship alone.
 
