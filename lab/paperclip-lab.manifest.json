@@ -50,7 +50,7 @@
     "phaseExecution": "internal-to-ceo"
   },
   "highProfileSnapshot": {
-    "capturedAt": "2026-08-10",
+    "capturedAt": "2026-08-12",
     "sourceCommand": "opencode debug agent sdd-orchestrator-high",
     "name": "sdd-orchestrator-high",
     "mode": "primary",
@@ -62,8 +62,6 @@
       "glob",
       "grep",
       "question",
-      "queued_steer",
-      "queued_steer_admin",
       "read",
       "skill",
       "task",
@@ -72,6 +70,7 @@
       "youtube_chapters_fetch_transcript",
       "youtube_chapters_validate"
     ],
+    "toolsNote": "Captured on Ubuntu (eduardopc). queued_steer and queued_steer_admin from the Gate A Mac snapshot do not exist in this environment; the opencode debug dump also emits an artifact key \"invalid\" on every agent here, which is not a real tool and is excluded. User approved this drift on 2026-08-12.",
     "permissions": {
       "questionInNonInteractiveRun": "deny",
       "secretReads": "deny",
@@ -92,16 +91,16 @@
     }
   },
   "mcpSnapshot": {
-    "capturedAt": "2026-08-10",
+    "capturedAt": "2026-08-12",
     "sourceCommand": "opencode mcp list",
     "servers": [
       { "name": "context7", "status": "connected" },
       { "name": "engram", "status": "connected" },
-      { "name": "freecad", "status": "connected" },
       { "name": "gmail_emb", "status": "connected" },
       { "name": "gmail_personal", "status": "connected" },
       { "name": "gmail_zeler", "status": "connected" }
-    ]
+    ],
+    "serversNote": "Captured on Ubuntu (eduardopc). freecad MCP from the Gate A Mac snapshot is not configured in this environment (it exists only in a config backup). User approved this drift on 2026-08-12."
   },
   "generatedPaths": {
     "evidence": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
