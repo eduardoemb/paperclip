@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN "ceo_execution_policy" text DEFAULT 'delegate_first' NOT NULL;

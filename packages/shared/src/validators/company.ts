@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CEO_EXECUTION_POLICIES,
   COMPANY_STATUSES,
   ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
@@ -51,6 +52,9 @@ export const updateCompanySchema = createCompanySchema
     brandColor: brandColorSchema,
     logoAssetId: logoAssetIdSchema,
     attachmentMaxBytes: attachmentMaxBytesSchema.optional(),
+    // Board-only: the agent PATCH uses updateCompanyBrandingSchema (strict),
+    // so this field can never be changed by an agent.
+    ceoExecutionPolicy: z.enum(CEO_EXECUTION_POLICIES).optional(),
   });
 
 export type UpdateCompany = z.infer<typeof updateCompanySchema>;

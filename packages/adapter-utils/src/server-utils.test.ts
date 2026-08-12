@@ -12,6 +12,7 @@ import {
   buildInvocationEnvForLogs,
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   materializePaperclipSkillCopy,
+  normalizePaperclipWakePayload,
   refreshPaperclipWorkspaceEnvForExecution,
   renderPaperclipWakePrompt,
   selectPaperclipTaskMarkdown,
@@ -1982,6 +1983,63 @@ describe("selectPaperclipTaskMarkdown", () => {
         { resumedSession: true },
       ),
     ).toBe(fullMarkdown);
+  });
+
+  it("renders the CEO execution policy overlay on every wake", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "issue_assigned",
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-9001",
+        title: "Direct work",
+        status: "in_progress",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+      ceoExecutionPolicy: {
+        policy: "direct_allowed",
+        overlay: "## Company CEO execution policy (authoritative overlay)\nYou MAY execute directly.",
+      },
+    });
+    expect(prompt).toContain("## Company CEO execution policy (authoritative overlay)");
+    expect(prompt).toContain("You MAY execute directly.");
+  });
+
+  it("keeps a policy-only wake payload alive so the overlay renders on content-less heartbeats", () => {
+    const normalized = normalizePaperclipWakePayload({
+      reason: "heartbeat",
+      ceoExecutionPolicy: {
+        policy: "delegate_first",
+        overlay: "## Company CEO execution policy (authoritative overlay)\nYou MUST delegate.",
+      },
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized?.ceoExecutionPolicy?.policy).toBe("delegate_first");
+    const prompt = renderPaperclipWakePrompt({
+      reason: "heartbeat",
+      ceoExecutionPolicy: {
+        policy: "delegate_first",
+        overlay: "## Company CEO execution policy (authoritative overlay)\nYou MUST delegate.",
+      },
+    });
+    expect(prompt).toContain("You MUST delegate.");
+  });
+
+  it("omits the policy overlay when the wake payload carries none", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "issue_assigned",
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-9002",
+        title: "Regular work",
+        status: "in_progress",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    });
+    expect(prompt).not.toContain("Company CEO execution policy");
   });
 });
 
