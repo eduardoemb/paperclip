@@ -695,7 +695,21 @@ type PaperclipWakePayload = {
   missingCount: number;
   truncated: boolean;
   fallbackFetchNeeded: boolean;
+  ceoExecutionPolicy: PaperclipWakeCeoExecutionPolicy | null;
 };
+
+type PaperclipWakeCeoExecutionPolicy = {
+  policy: string;
+  overlay: string;
+};
+
+function normalizePaperclipWakeCeoExecutionPolicy(value: unknown): PaperclipWakeCeoExecutionPolicy | null {
+  const policy = parseObject(value);
+  const mode = asString(policy.policy, "").trim();
+  const overlay = asString(policy.overlay, "").trim();
+  if (!mode || !overlay) return null;
+  return { policy: mode, overlay };
+}
 
 function normalizePaperclipWakeRecovery(value: unknown): PaperclipWakeRecovery | null {
   const recovery = parseObject(value);
@@ -1311,7 +1325,8 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
   const checkboxSelection = normalizePaperclipWakeCheckboxSelection(payload.checkboxSelection);
   const executionWorkspace = normalizePaperclipWakeExecutionWorkspace(payload.executionWorkspace);
   const agentMessage = normalizePaperclipWakeAgentMessage(payload.agentMessage);
-  if (comments.length === 0 && commentIds.length === 0 && annotationDeltas.length === 0 && childIssueSummaries.length === 0 && unresolvedBlockerIssueIds.length === 0 && unresolvedBlockerSummaries.length === 0 && !activeTreeHold && !executionStage && !continuationSummary && !planReviewContext && !livenessContinuation && !taskWatchdog && !checkboxSelection && !executionWorkspace && !agentMessage && !recovery && !normalizePaperclipWakeIssue(payload.issue)) {
+  const ceoExecutionPolicy = normalizePaperclipWakeCeoExecutionPolicy(payload.ceoExecutionPolicy);
+  if (comments.length === 0 && commentIds.length === 0 && annotationDeltas.length === 0 && childIssueSummaries.length === 0 && unresolvedBlockerIssueIds.length === 0 && unresolvedBlockerSummaries.length === 0 && !activeTreeHold && !executionStage && !continuationSummary && !planReviewContext && !livenessContinuation && !taskWatchdog && !checkboxSelection && !executionWorkspace && !agentMessage && !recovery && !ceoExecutionPolicy && !normalizePaperclipWakeIssue(payload.issue)) {
     return null;
   }
 
@@ -1347,6 +1362,7 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
     missingCount: asNumber(commentWindow.missingCount, 0),
     truncated: asBoolean(payload.truncated, false),
     fallbackFetchNeeded: asBoolean(payload.fallbackFetchNeeded, false),
+    ceoExecutionPolicy,
   };
 }
 
@@ -1557,6 +1573,13 @@ export function renderPaperclipWakePrompt(
         ...executionContractLines,
         ...wakeSummaryLines,
       ];
+
+  if (normalized.ceoExecutionPolicy) {
+    lines.push(
+      "",
+      normalized.ceoExecutionPolicy.overlay,
+    );
+  }
 
   if (normalized.issue?.status) {
     lines.push(`- issue status: ${normalized.issue.status}`);

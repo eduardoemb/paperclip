@@ -4,6 +4,7 @@ import {
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
   ISSUE_THREAD_INTERACTION_KINDS,
+  type CeoExecutionPolicy,
   type InteractionResolverGovernance,
   type IssueThreadInteractionKind,
   type IssueThreadInteractionResolverPolicy,
@@ -144,6 +145,7 @@ export function CompanySettings() {
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [governance, setGovernance] = useState<InteractionResolverGovernance>({});
+  const [ceoExecutionPolicy, setCeoExecutionPolicy] = useState<CeoExecutionPolicy>("delegate_first");
 
   // Sync local state from selected company
   useEffect(() => {
@@ -154,6 +156,7 @@ export function CompanySettings() {
     setAttachmentMaxMiB(String(Math.round((selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES) / BYTES_PER_MIB)));
     setLogoUrl(selectedCompany.logoUrl ?? "");
     setGovernance(selectedCompany.interactionResolverGovernance ?? {});
+    setCeoExecutionPolicy(selectedCompany.ceoExecutionPolicy ?? "delegate_first");
   }, [selectedCompany]);
 
   const attachmentMaxBytes = Number.parseInt(attachmentMaxMiB, 10) * BYTES_PER_MIB;
@@ -196,6 +199,15 @@ export function CompanySettings() {
       companiesApi.update(selectedCompanyId!, { interactionResolverGovernance: next }),
     onSuccess: (company) => {
       setGovernance(company.interactionResolverGovernance ?? {});
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    }
+  });
+
+  const ceoPolicyMutation = useMutation({
+    mutationFn: (policy: CeoExecutionPolicy) =>
+      companiesApi.update(selectedCompanyId!, { ceoExecutionPolicy: policy }),
+    onSuccess: (company) => {
+      setCeoExecutionPolicy(company.ceoExecutionPolicy ?? "delegate_first");
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     }
   });
@@ -485,6 +497,47 @@ export function CompanySettings() {
             onChange={(v) => settingsMutation.mutate(v)}
             toggleTestId="company-settings-team-approval-toggle"
           />
+        </div>
+      </div>
+
+      {/* CEO execution policy */}
+      <div className="space-y-4" data-testid="company-settings-ceo-policy-section">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          CEO execution policy
+        </div>
+        <div className="rounded-md border border-border px-4 py-3">
+          <div className="mb-2 text-sm font-medium">Direct CEO execution</div>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Whether the CEO agent may execute assignable work directly.
+            {" "}<span className="font-medium text-foreground">Delegate first</span> keeps the
+            delegation-first default;{" "}
+            <span className="font-medium text-foreground">Direct allowed</span> lets the CEO
+            work directly while authorization, approvals, and budgets still apply.
+          </p>
+          <Select
+            value={ceoExecutionPolicy}
+            onValueChange={(v) => ceoPolicyMutation.mutate(v as CeoExecutionPolicy)}
+            disabled={ceoPolicyMutation.isPending}
+          >
+            <SelectTrigger
+              className="w-56"
+              data-testid="company-settings-ceo-policy-select"
+              aria-label="CEO execution policy"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="delegate_first">Delegate first</SelectItem>
+              <SelectItem value="direct_allowed">Direct allowed</SelectItem>
+            </SelectContent>
+          </Select>
+          {ceoPolicyMutation.isError && (
+            <span className="mt-2 block text-xs text-destructive">
+              {ceoPolicyMutation.error instanceof Error
+                ? ceoPolicyMutation.error.message
+                : "Failed to save CEO execution policy"}
+            </span>
+          )}
         </div>
       </div>
 

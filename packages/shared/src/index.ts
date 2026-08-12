@@ -445,6 +445,7 @@ export {
   PLUGIN_EVENT_TYPES,
   PLUGIN_BRIDGE_ERROR_CODES,
   type CompanyStatus,
+  type CeoExecutionPolicy,
   type DeploymentMode,
   type DeploymentExposure,
   type BindMode,

@@ -23,6 +23,7 @@ function makeCompany(overrides: Partial<Company>): Company {
     brandColor: null,
     logoAssetId: null,
     logoUrl: null,
+    ceoExecutionPolicy: "delegate_first",
     defaultResponsibleUserId: null,
     createdAt: new Date(),
     updatedAt: new Date(),

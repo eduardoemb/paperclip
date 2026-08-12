@@ -49,6 +49,7 @@ function makeCompany(id: string): Company {
     brandColor: null,
     logoAssetId: null,
     logoUrl: null,
+    ceoExecutionPolicy: "delegate_first",
     createdAt: new Date(),
     updatedAt: new Date(),
   };

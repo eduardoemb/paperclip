@@ -170,6 +170,19 @@ The adapter classifies a session as unknown only on unambiguous evidence: explic
 
 Local adapters keep a defensive cwd/identity check in addition to the core decision, so direct adapter invocations outside the heartbeat remain safe. Session rotation for identity reasons never retries on connectivity loss; the fallback only fires for a reported unknown session.
 
+### Company CEO execution policy
+
+Each company stores a CEO execution policy in `companies.ceo_execution_policy` with two modes:
+
+- `delegate_first` (default) — the CEO agent MUST delegate assignable work to the right agent before doing individual-contributor work. This is the existing static delegation-first behavior, reinforced at run time.
+- `direct_allowed` — the board opted in to let the CEO agent execute assignable work directly instead of delegating.
+
+The policy is a run-time overlay, not a rewrite of the materialized CEO instruction bundles. On every CEO heartbeat the control plane resolves the running agent's own company policy and renders an authoritative wake-policy overlay into the run's wake payload (`ceoExecutionPolicy`), which the shared wake-prompt renderer surfaces in the wake prompt. This keeps customized or external CEO instruction files intact while still applying the policy on every heartbeat — including content-less wakes.
+
+The overlay never relaxes control-plane constraints: authorization, company scoping, approval gates, budget hard-stops, pause holds, and low-trust review restrictions bind identically under both modes. The policy is resolved per company and attached only to CEO agents of that company; non-CEO agents never receive it and no company's policy leaks into another company's runs.
+
+The policy is board-only: the board PATCH (`updateCompanySchema`) may change `ceoExecutionPolicy`, while the agent PATCH stays branding-only (`updateCompanyBrandingSchema`, strict) and rejects it.
+
 ## 6. Parent/Sub-Issue vs Blockers
 
 Paperclip uses two different relationships for different jobs.
