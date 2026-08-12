@@ -95,7 +95,20 @@ export function isOpenCodeUnknownSessionError(stdout: string, stderr: string): b
     .filter(Boolean)
     .join("\n");
 
-  return /unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[\\/]session[\\/].*\.json|notfounderror|no session/i.test(
-    haystack,
+  // Session rotation must require unambiguous evidence that the stored session
+  // no longer exists. Generic NotFoundError or bare "no session" phrasing can
+  // come from transient/network failures; classifying those as unknown
+  // sessions would silently rotate a healthy session on a network drop.
+  // Accepted evidence:
+  //   1. explicit "unknown session" wording,
+  //   2. "session ... not found" phrasing,
+  //   3. an OpenCode session storage file reported missing
+  //      (resource not found: <path>/session/<path>.json),
+  //   4. "no session" qualified by an existential claim (found/exists/with id).
+  return (
+    /\bunknown\s+session\b/i.test(haystack) ||
+    /\bsession\b[^\n]{0,160}?\bnot\s+found\b/i.test(haystack) ||
+    /resource\s+not\s+found:.*[\\/]session[\\/].*\.json/i.test(haystack) ||
+    /\bno\s+session\s+(?:found|exists?|with\s+(?:the\s+)?(?:session\s+)?id)\b/i.test(haystack)
   );
 }

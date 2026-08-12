@@ -152,6 +152,24 @@ Pre-dispatch configuration validation is a distinct gate that runs after ownersh
 
 A configuration-incomplete result is a gate outcome, not a runtime failure. It is one of the active gates that a checkout-time or dispatch-time check can surface instead of starting a run, and it leaves the issue in an explicit waiting state that names the missing binding. Surfacing the blocker keeps the issue healthy under the liveness contract while preventing a run that is guaranteed to fail once it cannot resolve its required secret/env bindings. A dispatched-then-failed run is the wrong shape for missing configuration: the missing binding is a known pre-dispatch condition, so the control plane must surface it as a configuration-incomplete blocker rather than letting the run start and then fail.
 
+### Task session continuity across wakeups
+
+Compatible agent wakeups resume the stored task session instead of starting a fresh agent conversation on every run. This is a first-class product invariant: an agent working an issue may be woken dozens of times (initial assignment, approval callbacks, re-assignments, manual nudges), and each wake should resume the existing conversation so the agent retains context about what it already did, which files it read, and which decisions it made.
+
+The control plane persists one task session per `(company, agent, adapter, taskKey)` in `agent_task_sessions`. The stored row keeps the adapter's session parameters, a display id, and — for adapters that run against a realized execution target — the execution-target identity that created the session (`execution_target_identity_json`).
+
+Session compatibility is decided by the control plane (heartbeat), not by each adapter. The core resolves the wake's execution target first (environment realization), then compares the stored execution-target identity against the resolved target and produces a `session.resume_decision`:
+
+- `compatible` — the stored session was created on the same execution target; the adapter receives the stored `sessionId` and resumes.
+- `execution_target_mismatch` — the stored session was created on a different execution target (different sandbox lease, environment, remote cwd, or transport); the adapter starts fresh with a structured rotation reason.
+- `missing_execution_target_identity` — the stored row predates identity tracking (legacy row with a null identity) and the wake resolves to a target with a real identity; the adapter rotates once with a structured reason. Legacy rows are not backfilled; the first compatible wake after the rotation persists the identity and resumes normally afterwards.
+- `config_changed`, `compacted`, `explicit_clear` — the wake already reset the session for a configuration change, session compaction, or an explicit fresh-session request; the adapter starts fresh.
+- `unknown_session` — the adapter attempted to resume, but the agent runtime reported that the stored session id no longer exists (for example, ephemeral storage); the adapter retries once with a fresh session and returns `clearSession: true` so the control plane removes the stale row.
+
+The adapter classifies a session as unknown only on unambiguous evidence: explicit "unknown session" wording, "session ... not found" phrasing, or a missing OpenCode session storage file. Generic `NotFoundError` or bare "no session" phrasing can come from transient/network failures and never rotates a healthy session.
+
+Local adapters keep a defensive cwd/identity check in addition to the core decision, so direct adapter invocations outside the heartbeat remain safe. Session rotation for identity reasons never retries on connectivity loss; the fallback only fires for a reported unknown session.
+
 ## 6. Parent/Sub-Issue vs Blockers
 
 Paperclip uses two different relationships for different jobs.

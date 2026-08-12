@@ -12,6 +12,7 @@ export const agentTaskSessions = pgTable(
     adapterType: text("adapter_type").notNull(),
     taskKey: text("task_key").notNull(),
     sessionParamsJson: jsonb("session_params_json").$type<Record<string, unknown>>(),
+    executionTargetIdentityJson: jsonb("execution_target_identity_json").$type<Record<string, unknown> | null>(),
     sessionDisplayId: text("session_display_id"),
     lastRunId: uuid("last_run_id").references(() => heartbeatRuns.id),
     lastError: text("last_error"),
