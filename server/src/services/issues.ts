@@ -134,6 +134,10 @@ import {
   type ActivityPublication,
 } from "./activity-log.js";
 import { buildIssueChanges } from "./issue-change-receipt.js";
+import {
+  DEPENDENCY_RESOLVING_ISSUE_STATUSES,
+  issueStatusResolvesDependencyEdge,
+} from "./issue-dependency-resolution.js";
 
 const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
 const MAX_ISSUE_COMMENT_PAGE_LIMIT = 500;
@@ -1259,9 +1263,8 @@ async function listIssueDependencyReadinessMap(
   for (const row of blockerRows) {
     const current = readinessMap.get(row.issueId) ?? createIssueDependencyReadiness(row.issueId);
     current.blockerIssueIds.push(row.blockerIssueId);
-    // Only done blockers resolve dependents; cancelled blockers stay unresolved
-    // until an operator removes or replaces the blocker relationship explicitly.
-    if (row.blockerStatus !== "done") {
+    // Resolved blockers are done or cancelled; only done can require workspace finalization.
+    if (!issueStatusResolvesDependencyEdge(row.blockerStatus)) {
       current.unresolvedBlockerIssueIds.push(row.blockerIssueId);
       current.unresolvedBlockerCount += 1;
       current.allBlockersDone = false;
@@ -1330,12 +1333,12 @@ async function listUnresolvedBlockerIssueIds(
       and(
         eq(issues.companyId, companyId),
         inArray(issues.id, uniqueBlockerIssueIds),
-        // Cancelled blockers intentionally remain unresolved until the relation changes.
-        ne(issues.status, "done"),
+        notInArray(issues.status, [...DEPENDENCY_RESOLVING_ISSUE_STATUSES]),
       ),
     )
     .then((rows) => rows.map((row) => row.id));
 }
+
 async function getProjectDefaultGoalId(
   db: ProjectGoalReader,
   companyId: string,
@@ -2413,7 +2416,7 @@ async function listIssueBlockerAttentionMap(
       ]);
 
       const unresolvedExplicitBlockerRows = explicitBlockerRows.filter(
-        (row) => row.status !== "done" || pendingFinalizeBlockerIssueIds.has(row.blockerIssueId),
+        (row) => !issueStatusResolvesDependencyEdge(row.status) || pendingFinalizeBlockerIssueIds.has(row.blockerIssueId),
       );
       appendBlockerAttentionEdges(edgesByIssueId, [
         ...unresolvedExplicitBlockerRows
@@ -2423,7 +2426,6 @@ async function listIssueBlockerAttentionMap(
           .filter((row): row is IssueBlockerAttentionQueryRow & { issueId: string } => row.issueId !== null)
           .map((row) => ({ issueId: row.issueId, blockerIssueId: row.blockerIssueId })),
       ]);
-
       for (const row of [...unresolvedExplicitBlockerRows, ...childRows]) {
         if (!row.issueId || nodesById.has(row.blockerIssueId)) continue;
         nodesById.set(row.blockerIssueId, {
@@ -2643,7 +2645,7 @@ async function listIssueBlockerAttentionMap(
 
     const downstream = (edgesByIssueId.get(node.id) ?? []).filter((edge) => {
       const blocker = nodesById.get(edge.blockerIssueId);
-      return blocker?.status !== "done" || pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId);
+      return !issueStatusResolvesDependencyEdge(blocker?.status) || pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId);
     });
     if (downstream.length > 0) {
       const nextSeen = new Set(seen);
@@ -2713,7 +2715,7 @@ async function listIssueBlockerAttentionMap(
     nextSeen.add(nodeId);
     return (edgesByIssueId.get(node.id) ?? []).some((edge) => {
       const blocker = nodesById.get(edge.blockerIssueId);
-      if (blocker?.status === "done" && !pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId)) return false;
+      if (issueStatusResolvesDependencyEdge(blocker?.status) && !pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId)) return false;
       return pathHasLiveWork(edge.blockerIssueId, nextSeen);
     });
   };
@@ -2729,7 +2731,7 @@ async function listIssueBlockerAttentionMap(
   for (const root of roots) {
     const topLevelEdges = (edgesByIssueId.get(root.id) ?? []).filter((edge) => {
       const blocker = nodesById.get(edge.blockerIssueId);
-      return blocker?.status !== "done" || pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId);
+      return !issueStatusResolvesDependencyEdge(blocker?.status) || pendingFinalizeBlockerIssueIds.has(edge.blockerIssueId);
     });
     if (topLevelEdges.length === 0) {
       attentionMap.set(root.id, createIssueBlockerAttention({

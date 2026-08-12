@@ -6,10 +6,12 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
+  agentRuntimeState,
   agentWakeupRequests,
   agents,
   approvals,
   assets,
+  authUsers,
   companies,
   companyMemberships,
   costEvents,
@@ -107,6 +109,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.delete(costEvents);
     await deleteHeartbeatRunsWithDependents();
     await db.delete(agentWakeupRequests);
+    await db.delete(agentRuntimeState);
     await db.delete(issueRelations);
     await db.delete(issueComments);
     await db.delete(issueThreadInteractions);
@@ -121,6 +124,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.delete(companyMemberships);
     await db.delete(agents);
     await db.delete(companies);
+    await db.delete(authUsers);
   });
 
   afterAll(async () => {
@@ -673,6 +677,59 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         reason: "mission_advance",
       }),
     ).rejects.toThrow("Issue is blocked by unresolved blockers");
+  });
+
+  it("allows plugin wakeups when every blocker is cancelled", async () => {
+    const { companyId, agentId } = await seedCompanyAndAgent();
+    const blockerIssueId = randomUUID();
+    const blockedIssueId = randomUUID();
+    await db.insert(authUsers).values({
+      id: "responsible-user",
+      name: "Responsible User",
+      email: "responsible-user@example.test",
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await db.insert(issues).values([
+      {
+        id: blockerIssueId,
+        companyId,
+        title: "Cancelled blocker",
+        status: "cancelled",
+        priority: "medium",
+      },
+      {
+        id: blockedIssueId,
+        companyId,
+        title: "Blocked issue",
+        status: "todo",
+        priority: "medium",
+        assigneeAgentId: agentId,
+        responsibleUserId: "responsible-user",
+      },
+    ]);
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId: blockerIssueId,
+      relatedIssueId: blockedIssueId,
+      type: "blocks",
+    });
+
+    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const result = await services.issues.requestWakeup({
+      issueId: blockedIssueId,
+      companyId,
+      reason: "mission_advance",
+    });
+
+    expect(result.queued).toBe(true);
+
+    // Neutralize the queued run so the afterEach drain never dispatches it and
+    // leaves company-scoped skill/runtime rows behind for unrelated tests.
+    await deleteHeartbeatRunsWithDependents();
+    await db.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, companyId));
+    await db.delete(agentRuntimeState).where(eq(agentRuntimeState.agentId, agentId));
   });
 
   it("narrows orchestration cost summaries by subtree and billing code", async () => {

@@ -447,7 +447,7 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     });
   });
 
-  it("prefers needs_attention over stalled when the chain also has a hard attention case", async () => {
+  it("treats a cancelled blocker as resolved and reports only the stalled review leaf", async () => {
     const { companyId, agentId } = await createCompany("PBQ");
     const parentId = await insertIssue({ companyId, identifier: "PBQ-1", title: "Parent", status: "blocked" });
     const reviewLeafId = await insertIssue({
@@ -470,11 +470,11 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     const parent = (await svc.list(companyId, { status: "blocked" })).find((issue) => issue.id === parentId);
 
     expect(parent?.blockerAttention).toMatchObject({
-      state: "needs_attention",
-      reason: "attention_required",
+      state: "stalled",
+      reason: "stalled_review",
       coveredBlockerCount: 0,
       stalledBlockerCount: 1,
-      attentionBlockerCount: 1,
+      attentionBlockerCount: 0,
       sampleStalledBlockerIdentifier: "PBQ-2",
     });
   });
@@ -519,13 +519,13 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     expect(parent?.blockerAttention).toMatchObject({
       state: "covered",
       reason: "active_dependency",
-      unresolvedBlockerCount: 2,
-      coveredBlockerCount: 2,
+      unresolvedBlockerCount: 1,
+      coveredBlockerCount: 1,
       attentionBlockerCount: 0,
     });
   });
 
-  it("does not treat cancelled liveness escalation issues as covered waiting paths", async () => {
+  it("surfaces a stale blocker hold when a blocked issue has only cancelled blockers", async () => {
     const { companyId, agentId } = await createCompany("PBLX");
     const parentId = await insertIssue({ companyId, identifier: "PBLX-1", title: "Parent", status: "blocked" });
     const cancelledLeafId = await insertIssue({
@@ -556,9 +556,9 @@ describeEmbeddedPostgres("issue blocker attention", () => {
 
     expect(parent?.blockedInboxAttention).toMatchObject({
       state: "needs_attention",
-      reason: "blocked_by_cancelled_issue",
-      leafIssue: { id: cancelledLeafId, identifier: "PBLX-2" },
+      reason: "blocked_chain_stalled",
     });
+    expect(parent?.blockedInboxAttention?.leafIssue).toBeNull();
   });
 
   it("does not treat a scheduled retry as actively covered work", async () => {
@@ -617,7 +617,7 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     await expect(svc.count(companyId, { attention: "blocked" })).resolves.toBe(1);
   });
 
-  it("surfaces cancelled-blocker attention on an assigned todo source", async () => {
+  it("does not block an assigned todo source when its blocker is cancelled", async () => {
     const { companyId, agentId } = await createCompany("BICX");
     const sourceId = await insertIssue({
       companyId,
@@ -638,13 +638,11 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     const rows = await svc.list(companyId, { attention: "blocked" });
     const source = rows.find((issue) => issue.id === sourceId);
 
-    expect(source?.blockedInboxAttention).toMatchObject({
-      kind: "blocked",
-      state: "needs_attention",
-      reason: "blocked_by_cancelled_issue",
-      owner: { type: "agent", agentId },
-      action: { label: "Replace blocker" },
-      leafIssue: { id: blockerId, identifier: "BICX-2" },
+    expect(source?.blockedInboxAttention).toBeUndefined();
+    await expect(svc.getDependencyReadiness(sourceId)).resolves.toMatchObject({
+      blockerIssueIds: [blockerId],
+      unresolvedBlockerIssueIds: [],
+      isDependencyReady: true,
     });
   });
 

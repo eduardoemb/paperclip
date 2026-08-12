@@ -34,6 +34,7 @@ import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { issueService } from "./issues.js";
+import { issueStatusResolvesDependencyEdge } from "./issue-dependency-resolution.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";
 import { goalService } from "./goals.js";
 import { documentService } from "./documents.js";
@@ -2158,7 +2159,7 @@ export function buildHostServices(
           throw new Error(`Issue is not wakeable in status: ${issue.status}`);
         }
         const relations = await issues.getRelationSummaries(issue.id);
-        const unresolvedBlockers = relations.blockedBy.filter((blocker) => blocker.status !== "done");
+        const unresolvedBlockers = relations.blockedBy.filter((blocker) => !issueStatusResolvesDependencyEdge(blocker.status));
         if (unresolvedBlockers.length > 0) {
           throw new Error("Issue is blocked by unresolved blockers");
         }
@@ -2226,7 +2227,7 @@ export function buildHostServices(
             throw new Error(`Issue is not wakeable in status: ${issue.status}`);
           }
           const relations = await issues.getRelationSummaries(issue.id);
-          const unresolvedBlockers = relations.blockedBy.filter((blocker) => blocker.status !== "done");
+          const unresolvedBlockers = relations.blockedBy.filter((blocker) => !issueStatusResolvesDependencyEdge(blocker.status));
           if (unresolvedBlockers.length > 0) {
             throw new Error("Issue is blocked by unresolved blockers");
           }
