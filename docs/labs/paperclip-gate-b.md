@@ -113,3 +113,63 @@ that did not actually pass.
   Node 20+ binary).
 - **pnpm missing**: install pnpm 9.15+ (`corepack enable` or the pnpm
   installer) and make it reachable from PATH.
+
+## B2 — Lab Completion Guard
+
+The server-side guard (B2) prevents premature `done` transitions on
+lab-tagged issues. It ships in `server/src/services/lab-completion-guard.ts`
+and runs inside the row-locked issue update transaction
+(`server/src/services/issues.ts`).
+
+### Activation
+
+- Set `PAPERCLIP_LAB_COMPLETION_LABEL` to the label that marks a lab
+  issue. The agreed value is `gentle-ai-lab`.
+- Without this env variable the guard is **inert**: no `done` transition
+  is blocked.
+- Only issues that already carry the configured label are evaluated.
+  A same-request label removal cannot bypass the guard: the pre-mutation
+  labels are snapshotted under the row lock.
+- Non-lab issues keep the existing `done` behavior.
+
+### Required completion evidence (B2-R2–R4)
+
+| Requirement | Evidence convention |
+|---|---|
+| Verify completed | `issue_work_products` row with `metadata.phase = "verify"` and `metadata.status = "completed"` |
+| Archive completed | `issue_work_products` row with `metadata.phase = "archive"` and `metadata.status = "completed"` |
+| Verify before archive | earliest archive evidence `created_at` must be after earliest verify evidence |
+| No open CRITICAL finding | no work product with `metadata.findingSeverity = "CRITICAL"` and `metadata.status = "open"` |
+| Human approval | `approvals` row of type `request_board_approval`, status `approved`, `decided_by_user_id` set, linked via `issue_approvals`, and `decided_at` after the newest evidence |
+
+The guard uses these metadata conventions only; it adds no database
+columns and changes no shared validators.
+
+### Blocked response (B2-R5)
+
+A blocked `done` transition returns HTTP `409` with:
+
+```json
+{
+  "details": {
+    "code": "lab_completion_blocked",
+    "missing": [
+      "verify_completed",
+      "archive_completed",
+      "verify_before_archive",
+      "open_critical_findings",
+      "human_approval"
+    ]
+  }
+}
+```
+
+`missing` lists every unsatisfied requirement in this fixed order; the
+transaction rolls back so status and labels stay unchanged.
+
+### Verification
+
+```sh
+pnpm vitest run server/src/services/lab-completion-guard.test.ts
+pnpm vitest run server/src/__tests__/lab-completion-guard-routes.test.ts
+```
