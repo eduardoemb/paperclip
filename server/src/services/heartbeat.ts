@@ -277,12 +277,17 @@ import {
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
   writePaperclipSkillSyncPreference,
 } from "@paperclipai/adapter-utils/server-utils";
+import {
+  adapterExecutionTargetSessionIdentity,
+  adapterExecutionTargetSessionMatches,
+} from "@paperclipai/adapter-utils/execution-target";
 import { extractSkillMentionIds, isUuidLike } from "@paperclipai/shared";
 import { evaluateCodexCredentialReadiness } from "@paperclipai/adapter-codex-local/server";
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
 import { environmentRuntimeService } from "./environment-runtime.js";
 import { skillVersionSelectionMap } from "./runtime-skill-selections.js";
+import { resolveSessionResumeDecision } from "./session-resume-decision.js";
 import { environmentRunOrchestrator } from "./environment-run-orchestrator.js";
 import { isUnsafeSessionWorkspaceCwd } from "./session-workspace-cwd.js";
 import {
@@ -8706,6 +8711,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     adapterType: string;
     taskKey: string;
     sessionParamsJson: Record<string, unknown> | null;
+    executionTargetIdentityJson: Record<string, unknown> | null;
     sessionDisplayId: string | null;
     lastRunId: string | null;
     lastError: string | null;
@@ -8721,6 +8727,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         .update(agentTaskSessions)
         .set({
           sessionParamsJson: input.sessionParamsJson,
+          executionTargetIdentityJson: input.executionTargetIdentityJson,
           sessionDisplayId: input.sessionDisplayId,
           lastRunId: input.lastRunId,
           lastError: input.lastError,
@@ -8739,6 +8746,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         adapterType: input.adapterType,
         taskKey: input.taskKey,
         sessionParamsJson: input.sessionParamsJson,
+        executionTargetIdentityJson: input.executionTargetIdentityJson,
         sessionDisplayId: input.sessionDisplayId,
         lastRunId: input.lastRunId,
         lastError: input.lastError,
@@ -14989,11 +14997,45 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.paperclipPreviousSessionId;
     }
 
+    // Resolve whether the stored task session may be resumed on the realized
+    // execution target. The core owns this compatibility decision; adapters only
+    // execute the resolved decision. A target mismatch or a legacy row without a
+    // persisted execution-target identity starts fresh with a structured reason,
+    // while compatible wakeups reuse the stored session id.
+    const storedExecutionTargetIdentity = taskSessionForRun?.executionTargetIdentityJson ?? null;
+    const resolvedExecutionTargetIdentity = executionTarget
+      ? adapterExecutionTargetSessionIdentity(executionTarget)
+      : null;
+    const sessionResumeDecision = resolveSessionResumeDecision({
+      hasStoredSessionId: runtimeSessionIdForAdapter != null || previousSessionDisplayId != null,
+      storedIdentity: storedExecutionTargetIdentity,
+      identityMatches: adapterExecutionTargetSessionMatches(
+        storedExecutionTargetIdentity,
+        executionTarget,
+      ),
+      compacted: sessionCompaction.rotate,
+      configReset: Boolean(resetTaskSession && sessionConfigFreshness.reset),
+      explicitClear: Boolean(shouldResetTaskSessionForWake(context)),
+    });
+    if (
+      sessionResumeDecision === "execution_target_mismatch" ||
+      sessionResumeDecision === "missing_execution_target_identity"
+    ) {
+      runtimeSessionIdForAdapter = null;
+      runtimeSessionParamsForAdapter = null;
+      previousSessionDisplayId = null;
+      runtimeWorkspaceWarnings.push(
+        `Starting a fresh session because ${sessionResumeDecision}.`,
+      );
+    }
+    context.paperclipSessionResumeDecision = sessionResumeDecision;
+
     const runtimeForAdapter = {
       sessionId: runtimeSessionIdForAdapter,
       sessionParams: runtimeSessionParamsForAdapter,
       sessionDisplayId: previousSessionDisplayId,
       taskKey,
+      resumeDecision: sessionResumeDecision,
     };
     const configFreshnessResultMetadata = {
       version: sessionConfigMetadata.version,
@@ -15805,6 +15847,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               freshSession: runtimeForAdapter.sessionId == null && runtimeForAdapter.sessionDisplayId == null,
               sessionRotated: sessionCompaction.rotate,
               sessionRotationReason: sessionCompaction.reason,
+              sessionResumeDecision: sessionResumeDecision,
               configFreshness: configFreshnessResultMetadata,
               provider: readNonEmptyString(adapterResult.provider) ?? "unknown",
               biller: resolveLedgerBiller(adapterResult),
@@ -16014,6 +16057,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 configuredModel,
                 sessionConfigMetadata,
               ),
+              executionTargetIdentityJson: resolvedExecutionTargetIdentity,
               sessionDisplayId: nextSessionState.displayId,
               lastRunId: finalizedRun.id,
               lastError: outcome === "succeeded" ? null : (adapterResult.errorMessage ?? "run_failed"),
@@ -16148,6 +16192,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               configuredModel,
               sessionConfigMetadata,
             ),
+            executionTargetIdentityJson: resolvedExecutionTargetIdentity,
             sessionDisplayId: previousSessionDisplayId,
             lastRunId: failedRun.id,
             lastError: message,

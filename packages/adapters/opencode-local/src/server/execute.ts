@@ -81,6 +81,21 @@ function resolveOpenCodeBiller(env: Record<string, string>, provider: string | n
 const REMOTE_OPENCODE_MODELS_PROBE_DEFAULT_TIMEOUT_SEC = 20;
 const REMOTE_OPENCODE_MODELS_PROBE_SANDBOX_TIMEOUT_SEC = 120;
 
+/**
+ * Whether the core-resolved session resume decision permits reusing the stored
+ * OpenCode session. A null/empty decision means the core did not consider a
+ * stored session (direct adapter invocation), so the adapter falls back to its
+ * defensive identity/cwd checks.
+ */
+export function coreAllowsSessionResume(resumeDecision: string | null | undefined): boolean {
+  return (
+    resumeDecision === null ||
+    resumeDecision === undefined ||
+    resumeDecision.trim().length === 0 ||
+    resumeDecision === "compatible"
+  );
+}
+
 export async function ensureRemoteOpenCodeModelConfiguredAndAvailable(input: {
   runId: string;
   executionTarget: NonNullable<AdapterExecutionContext["executionTarget"]>;
@@ -474,12 +489,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
     const runtimeSessionCwd = asString(runtimeSessionParams.cwd, "");
     const runtimeRemoteExecution = parseObject(runtimeSessionParams.remoteExecution);
+    // The core owns the compatibility decision and passes the resolved decision
+    // via runtime.resumeDecision. A non-compatible decision always starts fresh;
+    // when the decision is absent (direct adapter invocation) fall back to the
+    // defensive identity/cwd checks below.
+    const runtimeResumeDecision = asString(runtime.resumeDecision, "").trim() || null;
+    const coreAllowsResume = coreAllowsSessionResume(runtimeResumeDecision);
     const canResumeSession =
+      coreAllowsResume &&
       runtimeSessionId.length > 0 &&
       (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(effectiveExecutionCwd)) &&
       adapterExecutionTargetSessionMatches(runtimeRemoteExecution, runtimeExecutionTarget);
     const sessionId = canResumeSession ? runtimeSessionId : null;
-    if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
+    if (runtimeResumeDecision && runtimeSessionId && !canResumeSession && runtimeResumeDecision !== "compatible") {
+      await onLog(
+        "stdout",
+        `[paperclip] OpenCode session "${runtimeSessionId}" will not be resumed because ${runtimeResumeDecision}. Starting a fresh session.\n`,
+      );
+    } else if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
         `[paperclip] OpenCode session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
