@@ -4,27 +4,42 @@
   "source": {
     "repository": "https://github.com/paperclipai/paperclip.git",
     "approvedSha": "6a4e2e1b8c7129f6f913ae458ab0be9cba50bd6a",
-    "root": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip",
+    "mergeSha": "4d1d35893eb86ea4ed6cde1316588857f2a0748c",
+    "treeIdentity": "43c60f4c1a0b1610070ce407addbed2482d9ee68",
+    "root": "/home/eduardo/repositorios/paperclip",
     "remote": "upstream",
     "pushUrl": "file:///dev/null"
   },
   "toolchain": {
     "node": {
-      "binary": "/opt/homebrew/opt/node@20/bin/node",
-      "minimumVersion": "20.0.0"
+      "binary": "/home/eduardo/.nvm/versions/node/v22.23.1/bin/node",
+      "version": "22.23.1",
+      "minimumVersion": "20.0.0",
+      "resolution": "PATH node — nvm v22.23.1"
     },
     "pnpm": {
-      "binary": "/opt/homebrew/bin/pnpm",
-      "version": "9.15.4"
+      "binary": "/home/eduardo/.nvm/versions/node/v22.23.1/bin/pnpm",
+      "version": "9.15.4",
+      "minimumVersion": "9.15.0",
+      "available": true,
+      "resolution": "corepack enabled — pnpm@9.15.4 (packageManager pin)"
     },
     "opencode": {
-      "binary": "/Users/eduardoramirez/.opencode/bin/opencode",
+      "binary": "/home/eduardo/.opencode/bin/opencode",
       "observedVersion": "1.18.11"
     },
     "gentleAi": {
-      "binary": "/Users/eduardoramirez/.local/bin/gentle-ai",
-      "observedVersion": "2.4.0-main.2b191b854f10314965255595d452e88e6cade056"
+      "binary": "/home/eduardo/.local/bin/gentle-ai",
+      "observedVersion": "2.4.0-rc.6.0.20260811183637-63c861107028",
+      "doctorStatus": "healthy"
     }
+  },
+  "preflight": {
+    "runAt": "2026-08-11",
+    "status": "passed",
+    "exitCode": 0,
+    "blockedAtGate": null,
+    "blockedReason": null
   },
   "runtime": {
     "paperclipHome": "/Users/eduardoramirez/Library/Application Support/Paperclip/gentle-ai-sdd-lab",
@@ -91,6 +106,12 @@
   "generatedPaths": {
     "evidence": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
     "runs": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/runs"
+  },
+  "smoke": {
+    "status": "passed",
+    "reason": null,
+    "runAt": "2026-08-11",
+    "uiLoopback": "http://127.0.0.1:3100 (reached)"
   },
   "rollbackAllowlist": [
     "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
