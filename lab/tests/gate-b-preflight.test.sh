@@ -194,6 +194,42 @@ PATH="$DOCTOR_RED_SHIMS:$PATH" GATE_B_PINNED_SHA="$SEED1" GATE_B_EXPECTED_TREE="
   "$SB1/lab/scripts/gate-b-preflight.sh" "$SB1" 2>/dev/null
 check_exit "2.2c preflight blocks failing doctor" 6 $?
 
+# --- evidence integrity: --json reports failed gates as fail -------------
+PATH="$GREEN_SHIMS:$PATH" GATE_B_PINNED_SHA="$SEED1" GATE_B_EXPECTED_TREE="$TREE1" \
+  "$SB1/lab/scripts/gate-b-preflight.sh" "$SB1" --json 2>/dev/null
+check_exit "2.2d json mode passes on clean green sandbox" 0 $?
+
+# A dirty worktree must surface as cleanState=fail in JSON, never pass.
+printf 'dirty-json\n' >"$SB1/json-dirty.txt"
+PATH="$GREEN_SHIMS:$PATH" GATE_B_PINNED_SHA="$SEED1" GATE_B_EXPECTED_TREE="$TREE1" \
+  "$SB1/lab/scripts/gate-b-preflight.sh" "$SB1" --json 2>/dev/null >"$TMP_ROOT/json-blocked.json"
+JSON_EXIT=$?
+rm -f "$SB1/json-dirty.txt"
+check_exit "2.2e json mode fails on dirty worktree" 2 $JSON_EXIT
+JSON_STATUS="$(sed -n 's/^[[:space:]]*"status":[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_ROOT/json-blocked.json" | head -1)"
+if [ "$JSON_STATUS" = "blocked" ]; then
+  pass "2.2e json blocked status recorded"
+else
+  fail "2.2e json status is \"$JSON_STATUS\", expected blocked"
+fi
+JSON_CLEAN="$(sed -n 's/^[[:space:]]*"cleanState":[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_ROOT/json-blocked.json" | head -1)"
+if [ "$JSON_CLEAN" = "fail" ]; then
+  pass "2.2e json cleanState=fail recorded"
+else
+  fail "2.2e json cleanState is \"$JSON_CLEAN\", expected fail"
+fi
+
+# A red doctor must surface as doctor=fail in JSON.
+PATH="$DOCTOR_RED_SHIMS:$PATH" GATE_B_PINNED_SHA="$SEED1" GATE_B_EXPECTED_TREE="$TREE1" \
+  "$SB1/lab/scripts/gate-b-preflight.sh" "$SB1" --json 2>/dev/null >"$TMP_ROOT/json-doctor.json"
+check_exit "2.2f json mode blocks red doctor" 6 $?
+JSON_DOCTOR="$(sed -n 's/^[[:space:]]*"doctor":.*"ok":[[:space:]]*\(true\|false\).*/\1/p' "$TMP_ROOT/json-doctor.json" | head -1)"
+if [ "$JSON_DOCTOR" = "false" ]; then
+  pass "2.2f json doctor.ok=false recorded"
+else
+  fail "2.2f json doctor.ok is \"$JSON_DOCTOR\", expected false"
+fi
+
 echo ""
 echo "== Result: $((TESTS - FAILURES))/$TESTS passed, $FAILURES failed =="
 if [ "$FAILURES" -gt 0 ]; then exit 1; fi

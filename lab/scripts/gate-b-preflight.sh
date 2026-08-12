@@ -71,6 +71,16 @@ bool_() { [ "$1" = "pass" ] && printf 'true' || printf 'false'; }
 
 die() { # die <exit_code> <gate> <human_line>
   R_ALL=$1
+  # Mark the failing gate before emitting JSON so `--json` never reports a
+  # failed gate as pass (evidence integrity for manifest recapture).
+  case "$2" in
+    repositoryAuthority) R_AUTHORITY="fail" ;;
+    cleanState) R_CLEAN="fail" ;;
+    treeIdentity) R_TREE="fail" ;;
+    node) R_NODE="fail" ;;
+    pnpm) R_PNPM="fail" ;;
+    doctor) R_DOCTOR="fail" ;;
+  esac
   if [ "$JSON_MODE" -eq 1 ]; then emit_json "blocked" "$1"; else printf '%s\n' "$3" >&2; fi
   exit "$1"
 }
