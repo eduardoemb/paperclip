@@ -9530,7 +9530,7 @@ export function issueRoutes(
         blockerIssueIds: string[];
         source: string;
         mutation: string;
-      }) => {
+      }): Promise<boolean> => {
         const idempotencyKey = buildIssueBlockersResolvedWakeIdempotencyKey({
           dependentIssueId: input.dependentIssueId,
           resolvedBlockerIssueId: input.resolvedBlockerIssueId,
@@ -9540,7 +9540,7 @@ export function issueRoutes(
             companyId: issue.companyId,
             idempotencyKey,
           });
-          if (existingWake) return;
+          if (existingWake) return false;
         } catch (err) {
           logger.warn(
             { err, issueId: input.dependentIssueId, idempotencyKey },
@@ -9569,6 +9569,7 @@ export function issueRoutes(
             blockerIssueIds: input.blockerIssueIds,
           },
         });
+        return true;
       };
 
       if (executionStageWakeup) {
@@ -9729,7 +9730,7 @@ export function issueRoutes(
       if (existing.status !== "cancelled" && issue.status === "cancelled") {
         const dependents = await svc.listWakeableBlockedDependents(issue.id);
         for (const dependent of dependents) {
-          await addDependencyResolvedWakeup({
+          const wakeupAdded = await addDependencyResolvedWakeup({
             agentId: dependent.assigneeAgentId,
             dependentIssueId: dependent.id,
             resolvedBlockerIssueId: issue.id,
@@ -9737,6 +9738,7 @@ export function issueRoutes(
             source: "issue.blocker_resolved_by_cancellation",
             mutation: "blocker_cancelled",
           });
+          if (!wakeupAdded) continue;
           await logActivity(db, {
             companyId: issue.companyId,
             actorType: "system",

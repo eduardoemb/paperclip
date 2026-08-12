@@ -293,6 +293,51 @@ describe("issue dependency wakeups in issue routes", () => {
     });
   });
 
+  it("does not duplicate the wake or cancellation audit when cancellation is replayed", async () => {
+    mockIssueService.getById.mockResolvedValue(
+      makeMockIssue({ id: "issue-1", title: "Cancel blocker", status: "blocked" }),
+    );
+    mockIssueService.update.mockResolvedValue(
+      makeMockIssue({
+        id: "issue-1",
+        title: "Cancel blocker",
+        status: "cancelled",
+      }),
+    );
+    mockIssueService.listWakeableBlockedDependents.mockResolvedValue([
+      {
+        id: "issue-2",
+        assigneeAgentId: "agent-2",
+        blockerIssueIds: ["issue-1"],
+      },
+    ]);
+
+    const app = await createApp();
+    const first = await request(app).patch("/api/issues/issue-1").send({ status: "cancelled" });
+    expect(first.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(mockWakeup).toHaveBeenCalledTimes(1);
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          action: "issue.blocker_resolved_by_cancellation",
+          entityType: "issue",
+          entityId: "issue-2",
+        }),
+      );
+    });
+
+    mockFindExistingIssueBlockersResolvedWake.mockResolvedValue({ id: "wake-1", status: "queued" });
+    const replay = await request(app).patch("/api/issues/issue-1").send({ status: "cancelled" });
+    expect(replay.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockWakeup).toHaveBeenCalledTimes(1);
+    expect(mockLogActivity.mock.calls.filter(([, input]) =>
+      input?.action === "issue.blocker_resolved_by_cancellation",
+    )).toHaveLength(1);
+  });
+
   it("wakes an assigned blocked issue when blockers are applied after the blocker is already done", async () => {
     const parentIssueId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const childIssueId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
