@@ -32,7 +32,7 @@ release_info() { echo "$@"; }
 release_fail() { echo "Error: $*" >&2; exit 1; }
 resolve_release_remote() { printf 'origin\\n'; }
 fetch_release_remote() { :; }
-git_current_branch() { printf 'master\\n'; }
+git_current_branch() { printf 'main\\n'; }
 get_last_stable_tag() { printf 'v2026.709.0\\n'; }
 get_current_stable_version() { printf '2026.709.0\\n'; }
 utc_date_iso() { printf '2026-07-10\\n'; }
