@@ -1,0 +1,76 @@
+schema: spec-driven
+execution_mode: auto
+artifact_store:
+  mode: openspec
+delivery_strategy: single-pr
+review_budget_lines: 400
+
+context: |
+  Project: Paperclip, a TypeScript monorepo for an AI-agent company control plane.
+  Stack: pnpm 9.15.4, Node >=20, TypeScript, Express, React, Vite, Drizzle, and Vitest.
+  Architecture: server, UI, shared packages, database package, adapters, plugins, and CLI.
+  Persistence: OpenSpec files only for this lab initialization.
+  Scope: Documentation under docs/labs/ and OpenSpec artifacts only; no source edits.
+  Delivery: Single PR planning with a 400-line review budget; no PR is created in this lab.
+
+strict_tdd: true
+
+testing:
+  runner:
+    command: pnpm test:run
+    framework: Vitest
+  layers:
+    unit:
+      available: true
+      tool: Vitest
+    integration:
+      available: true
+      tool: Vitest with Supertest and embedded PostgreSQL suites
+    e2e:
+      available: true
+      tool: Playwright
+  coverage:
+    available: false
+    command: ""
+    note: No repository coverage script or coverage provider was detected.
+  quality:
+    linter:
+      available: true
+      command: pnpm --filter @paperclipai/hermes-paperclip-adapter lint
+      note: Linting is package-specific; no root lint script was detected.
+    type_checker:
+      available: true
+      command: pnpm typecheck
+    formatter:
+      available: false
+      command: ""
+
+rules:
+  proposal:
+    - Keep the change documentation-only unless the user explicitly changes the lab scope.
+    - Include rollback steps for any documentation or configuration change.
+    - Do not create Paperclip issues, agents, child tasks, commits, pushes, or pull requests.
+  specs:
+    - Write artifacts in English using RFC 2119 keywords where requirements are normative.
+    - Use Given/When/Then scenarios.
+    - Restrict implementation impact to docs/labs/ and openspec/.
+  design:
+    - Document the smallest compliant approach and its rationale.
+    - Do not propose source-code changes for this lab.
+  tasks:
+    - Group tasks by phase and keep each task completable in one session.
+    - Forecast changed lines against the 400-line review budget.
+  apply:
+    guidelines:
+      - Modify only docs/labs/ and openspec/ artifacts.
+      - Do not implement the task guide during initialization.
+    tdd: true
+    test_command: pnpm test:run
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+    note: Use focused structural checks for documentation-only changes; do not run the full suite without an affected source path.
+  archive:
+    - Preserve OpenSpec artifacts as the audit trail.
+    - Warn before merging destructive deltas.

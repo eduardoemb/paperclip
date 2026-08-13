@@ -527,3 +527,4 @@ MIT &copy; 2026 [Paperclip Labs, Inc](https://paperclip.ing)
 ## Labs
 
 - [Paperclip Gentle AI Gate B — pinned import & reproducible install](docs/labs/paperclip-gate-b.md)
+- [Paperclip Lab SDD Smoke Guide](docs/labs/paperclip-lab-sdd-smoke.md)
