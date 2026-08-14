@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -13,6 +15,9 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
+  issues,
+  projects,
+  projectWorkspaces,
 } from "@paperclipai/db";
 import { sessionCodec } from "@paperclipai/adapter-opencode-local/server";
 import {
@@ -20,9 +25,24 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
+import { instanceSettingsService } from "../services/instance-settings.ts";
+import { issueThreadInteractionService } from "../services/issue-thread-interactions.js";
 import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
 
 const capturedAdapterInputs: Array<{ runId: string; [key: string]: unknown }> = [];
+const execFileAsync = promisify(execFile);
+
+async function createTempRepo() {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-session-continuity-repo-"));
+  await execFileAsync("git", ["-C", repoRoot, "init"]);
+  await execFileAsync("git", ["-C", repoRoot, "config", "user.name", "Paperclip Test"]);
+  await execFileAsync("git", ["-C", repoRoot, "config", "user.email", "test@paperclip.local"]);
+  await fs.writeFile(path.join(repoRoot, "README.md"), "# Session continuity test repo\n", "utf8");
+  await execFileAsync("git", ["-C", repoRoot, "add", "README.md"]);
+  await execFileAsync("git", ["-C", repoRoot, "commit", "-m", "Initial commit"]);
+  await execFileAsync("git", ["-C", repoRoot, "branch", "-M", "main"]);
+  return repoRoot;
+}
 
 const adapterExecute = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -128,6 +148,9 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
         "heartbeat_runs",
         "agent_wakeup_requests",
         "agent_runtime_state",
+        "issues",
+        "project_workspaces",
+        "projects",
         "agents",
         "companies"
       RESTART IDENTITY CASCADE
@@ -168,6 +191,23 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
       permissions: {},
     });
     return { companyId, agentId };
+  }
+
+  async function seedIsolatedIssue(repoRoot: string) {
+    const { companyId, agentId } = await seedCompanyAndAgent();
+    await db.update(agents).set({ adapterConfig: { command: "opencode", cwd: repoRoot } }).where(eq(agents.id, agentId));
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    const issueId = randomUUID();
+    await db.insert(projects).values({ id: projectId, companyId, name: "Project", status: "active" });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId, companyId, projectId, name: "Primary", sourceType: "local_path", cwd: repoRoot, isPrimary: true,
+    });
+    await db.insert(issues).values({
+      id: issueId, companyId, projectId, projectWorkspaceId, title: "Session continuity", status: "todo", workMode: "standard", priority: "medium", assigneeAgentId: agentId,
+      executionWorkspaceSettings: { mode: "isolated_workspace" },
+    });
+    return { companyId, agentId, issueId };
   }
 
   async function seedTaskSession(input: {
@@ -215,8 +255,13 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
     return row;
   }
 
-  async function invokeAndWait(heartbeat: ReturnType<typeof heartbeatService>, agentId: string, taskKey: string) {
-    const run = await heartbeat.invoke(agentId, "on_demand", { taskKey }, "manual");
+  async function invokeAndWait(
+    heartbeat: ReturnType<typeof heartbeatService>,
+    agentId: string,
+    taskKey: string,
+    contextSnapshot: Record<string, unknown> = {},
+  ) {
+    const run = await heartbeat.invoke(agentId, "on_demand", { taskKey, ...contextSnapshot }, "manual");
     expect(run).not.toBeNull();
     const finished = await waitForRunToFinish(heartbeat, run!.id);
     expect(finished).not.toBeNull();
@@ -388,5 +433,25 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
     expect(row?.sessionParamsJson).toMatchObject({ sessionId: "stored-session-3" });
     expect(row?.sessionDisplayId).toBe("stored-session-3");
     expect(row?.lastError).toContain("network resource unavailable");
+  });
+
+  it("persists first-run metadata after an isolated workspace is linked", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableIsolatedWorkspaces: true });
+    const repoRoot = await createTempRepo();
+    try {
+      const { agentId, issueId } = await seedIsolatedIssue(repoRoot);
+      const heartbeat = heartbeatService(db);
+      adapterExecute.mockImplementation(async () => successResult("stored-session-1"));
+      const { run, finished } = await invokeAndWait(heartbeat, agentId, issueId, { issueId });
+      expect(finished.status).toBe("succeeded");
+      const issue = await db.select({ executionWorkspaceId: issues.executionWorkspaceId }).from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.executionWorkspaceId).not.toBeNull();
+      const session = await waitForTaskSessionLastRun(issueId, run.id);
+      expect(session?.sessionParamsJson).toMatchObject({ sessionId: "stored-session-1" });
+      expect(session?.sessionParamsJson).toHaveProperty("__paperclipConfigFingerprint");
+    } finally {
+      await instanceSettingsService(db).updateExperimental({ enableIsolatedWorkspaces: false });
+      await fs.rm(repoRoot, { recursive: true, force: true });
+    }
   });
 });
