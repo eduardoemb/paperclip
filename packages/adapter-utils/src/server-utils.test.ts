@@ -1186,6 +1186,38 @@ describe("renderPaperclipWakePrompt", () => {
     );
   });
 
+  it("renders a resolved generic interaction result with a continue directive and omits it for result-less wakes", () => {
+    const base = {
+      reason: "issue_commented",
+      issue: { id: "issue-1", identifier: "PAP-16001", title: "Answer follow-up", status: "in_progress" },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    };
+    const payload = {
+      ...base,
+      interactionKind: "ask_user_questions",
+      interactionStatus: "answered",
+      interactionResult: { outcome: "answered", summary: "Proceed with phase 1.", answerCount: 1 },
+    };
+
+    const prompt = renderPaperclipWakePrompt(payload, { resumedSession: true });
+    expect(prompt).toContain("- interaction: ask_user_questions answered");
+    expect(prompt).toContain("- interaction result: answered (1 answer)");
+    expect(prompt).toContain("- interaction summary: Proceed with phase 1.");
+    expect(prompt).toContain("- continue: the interaction above is resolved");
+    // The result must not force a global thread fetch.
+    expect(prompt).toContain("- fallback fetch needed: no");
+    expect(JSON.parse(stringifyPaperclipWakePayload(payload) ?? "{}")).toMatchObject({
+      interactionResult: { outcome: "answered", summary: "Proceed with phase 1.", answerCount: 1 },
+    });
+
+    // A result-less interaction (alien/pending) renders no generic result block.
+    const pending = renderPaperclipWakePrompt({ ...base, interactionKind: "request_confirmation", interactionStatus: "pending" });
+    expect(pending).not.toContain("- interaction result:");
+    expect(pending).not.toContain("- continue: the interaction above is resolved");
+  });
+
   it("renders a plugin session message as the user turn without granting it system authority", () => {
     const payload = {
       reason: "gateway_chat_message",

@@ -624,6 +624,26 @@ function readConfirmationResultForWake(result: unknown) {
   };
 }
 
+// Sanitized generic interaction result carried into the continuation wake so a
+// resumed agent sees what the board decided (e.g. answered ask_user_questions)
+// and can continue instead of leaving the issue in review. Bounded whitelist only.
+const MAX_WAKE_INTERACTION_RESULT_SUMMARY_CHARS = 2_000;
+
+function readInteractionResultForWake(input: {
+  kind: string;
+  status: string;
+  result?: unknown;
+}) {
+  const parsed = readObject(input.result);
+  if (Object.keys(parsed).length === 0) return null;
+  const summaryMarkdown = readNonEmptyString(parsed.summaryMarkdown);
+  return {
+    outcome: readNonEmptyString(parsed.outcome) ?? input.status,
+    summary: summaryMarkdown ? summaryMarkdown.slice(0, MAX_WAKE_INTERACTION_RESULT_SUMMARY_CHARS) : null,
+    answerCount: Array.isArray(parsed.answers) ? parsed.answers.length : 0,
+  };
+}
+
 function hasIssueWorkspaceAuditChange(previous: Record<string, unknown>) {
   return Object.keys(previous).some((key) => ISSUE_WORKSPACE_AUDIT_FIELDS.has(key));
 }
@@ -1994,6 +2014,7 @@ async function queueResolvedInteractionContinuationWakeup(input: {
   const workspaceRefreshReason = readNonEmptyString(input.workspaceRefreshReason);
   const planTarget = readPlanConfirmationTargetForIssue(input.interaction.payload, input.issue.id);
   const interactionResult = readConfirmationResultForWake(input.interaction.result);
+  const genericInteractionResult = readInteractionResultForWake(input.interaction);
   const checkboxSelection = readCheckboxSelectionForWake(input.interaction);
   const toolAction = readToolActionContinuationContext(input.interaction);
   const newlyResolvedItemIds = input.newlyResolvedItemIds?.filter((value) => value.length > 0) ?? [];
@@ -2029,6 +2050,7 @@ async function queueResolvedInteractionContinuationWakeup(input: {
       ...(checkboxSelection ? { checkboxSelection } : {}),
       ...(toolAction ? { toolAction } : {}),
       ...(itemVerdicts ? { itemVerdicts, newlyResolvedItemIds } : {}),
+      ...(genericInteractionResult ? { interactionResult: genericInteractionResult } : {}),
       ...(reviewPathContext ?? {}),
       mutation: "interaction",
     },
@@ -2047,6 +2069,7 @@ async function queueResolvedInteractionContinuationWakeup(input: {
       ...(checkboxSelection ? { checkboxSelection } : {}),
       ...(toolAction ? { toolAction } : {}),
       ...(itemVerdicts ? { itemVerdicts, newlyResolvedItemIds } : {}),
+      ...(genericInteractionResult ? { interactionResult: genericInteractionResult } : {}),
       ...(reviewPathContext ?? {}),
       wakeReason: "issue_commented",
       source: input.source,

@@ -674,6 +674,18 @@ describe.sequential("issue thread interaction routes", () => {
           interactionStatus: "answered",
           sourceCommentId: "comment-2",
           sourceRunId: "run-2",
+          interactionResult: {
+            outcome: "answered",
+            summary: null,
+            answerCount: 1,
+          },
+        }),
+        contextSnapshot: expect.objectContaining({
+          interactionResult: {
+            outcome: "answered",
+            summary: null,
+            answerCount: 1,
+          },
         }),
       }),
     );

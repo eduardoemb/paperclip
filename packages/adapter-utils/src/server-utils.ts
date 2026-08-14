@@ -640,6 +640,15 @@ type PaperclipWakeCheckboxSelection = {
   }>;
 };
 
+// Sanitized resolved generic interaction result (e.g. an answered
+// ask_user_questions interaction) surfaced in the wake so a resumed agent sees
+// the board's decision and continues instead of leaving the issue in review.
+type PaperclipWakeInteractionResult = {
+  outcome: string | null;
+  summary: string | null;
+  answerCount: number | null;
+};
+
 type PaperclipWakeExecutionWorkspace = {
   branchName: string | null;
 };
@@ -681,6 +690,7 @@ type PaperclipWakePayload = {
   taskWatchdog: PaperclipWakeTaskWatchdogContext | null;
   interactionKind: string | null;
   interactionStatus: string | null;
+  interactionResult: PaperclipWakeInteractionResult | null;
   checkboxSelection: PaperclipWakeCheckboxSelection | null;
   executionWorkspace: PaperclipWakeExecutionWorkspace | null;
   agentMessage: PaperclipWakeAgentMessage | null;
@@ -1107,6 +1117,18 @@ function normalizePaperclipWakeCheckboxSelection(value: unknown): PaperclipWakeC
   };
 }
 
+function normalizePaperclipWakeInteractionResult(value: unknown): PaperclipWakeInteractionResult | null {
+  const result = parseObject(value);
+  const outcome = asString(result.outcome, "").trim() || null;
+  const summary = asString(result.summary, "").trim() || null;
+  const answerCount =
+    typeof result.answerCount === "number" && Number.isFinite(result.answerCount)
+      ? Math.max(0, Math.floor(result.answerCount))
+      : null;
+  if (!outcome && !summary && answerCount === null) return null;
+  return { outcome, summary, answerCount };
+}
+
 function normalizePaperclipWakeExecutionPrincipal(value: unknown): PaperclipWakeExecutionPrincipal | null {
   const principal = parseObject(value);
   const typeRaw = asString(principal.type, "").trim().toLowerCase();
@@ -1323,6 +1345,7 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
 
   const activeTreeHold = normalizePaperclipWakeTreeHoldSummary(payload.activeTreeHold);
   const checkboxSelection = normalizePaperclipWakeCheckboxSelection(payload.checkboxSelection);
+  const interactionResult = normalizePaperclipWakeInteractionResult(payload.interactionResult);
   const executionWorkspace = normalizePaperclipWakeExecutionWorkspace(payload.executionWorkspace);
   const agentMessage = normalizePaperclipWakeAgentMessage(payload.agentMessage);
   const ceoExecutionPolicy = normalizePaperclipWakeCeoExecutionPolicy(payload.ceoExecutionPolicy);
@@ -1349,6 +1372,7 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
     taskWatchdog,
     interactionKind: asString(payload.interactionKind, "").trim() || null,
     interactionStatus: asString(payload.interactionStatus, "").trim() || null,
+    interactionResult,
     checkboxSelection,
     executionWorkspace,
     agentMessage,
@@ -1623,6 +1647,16 @@ export function renderPaperclipWakePrompt(
       .join(", ") || "(none)";
     lines.push(`- checkbox selection ids: ${selectedOptionIds}`);
     lines.push(`- checkbox selection options: ${selectedOptions}`);
+  }
+  if (normalized.interactionResult) {
+    const result = normalized.interactionResult;
+    const answerNote = result.answerCount ? ` (${result.answerCount} answer${result.answerCount === 1 ? "" : "s"})` : "";
+    lines.push(
+      `- interaction: ${normalized.interactionKind ?? "unknown"} ${normalized.interactionStatus ?? "unknown"}`,
+      `- interaction result: ${result.outcome ?? "unknown"}${answerNote}`,
+      ...(result.summary ? [`- interaction summary: ${result.summary}`] : []),
+      "- continue: the interaction above is resolved; continue the current task from the first pending phase and do not leave the issue in review",
+    );
   }
   if (normalized.issue?.workMode === "planning" && !normalized.taskWatchdog) {
     const hasWakeComments = normalized.comments.length > 0;

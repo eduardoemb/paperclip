@@ -5343,6 +5343,7 @@ const INTERACTION_CONTINUATION_CONTEXT_KEYS = [
   "checkboxSelection",
   "itemVerdicts",
   "newlyResolvedItemIds",
+  "interactionResult",
 ] as const;
 
 function isInteractionResolutionWakePayload(payload: Record<string, unknown> | null | undefined) {
@@ -5660,6 +5661,7 @@ export async function buildPaperclipWakePayload(input: {
   const interactionId = readNonEmptyString(input.contextSnapshot.interactionId);
   const interactionKind = readNonEmptyString(input.contextSnapshot.interactionKind);
   const interactionStatus = readNonEmptyString(input.contextSnapshot.interactionStatus);
+  const interactionResult = parseObject(input.contextSnapshot.interactionResult);
   const checkboxSelection = parseObject(input.contextSnapshot.checkboxSelection);
   const planReviewContext = issueId
     ? await buildPlanReviewContext({
@@ -5751,6 +5753,7 @@ export async function buildPaperclipWakePayload(input: {
       : null,
     interactionKind,
     interactionStatus,
+    interactionResult: Object.keys(interactionResult).length > 0 ? interactionResult : null,
     checkboxSelection: Object.keys(checkboxSelection).length > 0 ? checkboxSelection : null,
     checkedOutByHarness: input.contextSnapshot[PAPERCLIP_HARNESS_CHECKOUT_KEY] === true,
     simplifiedEnglishInteractions: input.simplifiedEnglishInteractions === true,
