@@ -17,7 +17,13 @@ const {
   removeMaintainerOnlySkillSymlinks: vi.fn(async () => []),
   resolveAdapterExecutionTargetCommandForLogs: vi.fn(async () => "opencode"),
   runAdapterExecutionTargetProcess: vi.fn(
-    async (_runId: string, _target: unknown, _command: string, _args: string[]) => ({
+    async (
+      _runId: string,
+      _target: unknown,
+      _command: string,
+      _args: string[],
+      _opts?: { cwd?: string },
+    ) => ({
       exitCode: 0,
       signal: null,
       timedOut: false,
@@ -60,7 +66,7 @@ import { execute } from "./execute.js";
 const UNKNOWN_SESSION_STORAGE_PATH_ERROR =
   "NotFoundError: Resource not found: /Users/test/.local/share/opencode/storage/session/project/ses_missing.json";
 
-function buildContext(cwd: string) {
+function buildContext(cwd: string, extraArgs: string[] = []) {
   return {
     runId: "run-1",
     agent: {
@@ -84,6 +90,7 @@ function buildContext(cwd: string) {
       command: "opencode",
       model: "opencode/gpt-5-nano",
       cwd,
+      extraArgs,
     },
     context: {},
     onLog: vi.fn(async () => {}),
@@ -163,6 +170,22 @@ describe("opencode_local session rotation at the runtime boundary", () => {
     // control plane keeps the row and resumes it on the next wake.
     expect(result.sessionId).toBe("stored-session-1");
     expect(result.sessionParams).toMatchObject({ sessionId: "stored-session-1" });
+  });
+
+  it("preserves configured profile arguments and cwd when resuming", async () => {
+    const cwd = "/home/eduardo/repositorios/paperclip";
+    runAdapterExecutionTargetProcess.mockResolvedValueOnce(buildSuccessOutput("stored-session-1"));
+
+    const result = await execute(buildContext(cwd, ["--agent", "sdd-orchestrator-high"]) as never);
+
+    expect(runAdapterExecutionTargetProcess).toHaveBeenCalledTimes(1);
+    const args = runAdapterExecutionTargetProcess.mock.calls[0]?.[3] as string[] | undefined;
+    expect(args).toEqual(
+      expect.arrayContaining(["--session", "stored-session-1", "--agent", "sdd-orchestrator-high"]),
+    );
+    const processOptions = runAdapterExecutionTargetProcess.mock.calls[0]?.[4] as { cwd: string } | undefined;
+    expect(processOptions?.cwd).toBe(cwd);
+    expect(result.sessionParams).toMatchObject({ sessionId: "stored-session-1", cwd });
   });
 
   it("rotates once when the resume attempt reports the stored session file is missing", async () => {
