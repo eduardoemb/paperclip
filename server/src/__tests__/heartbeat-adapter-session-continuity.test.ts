@@ -13,13 +13,16 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
+  issues,
 } from "@paperclipai/db";
 import { sessionCodec } from "@paperclipai/adapter-opencode-local/server";
+import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
+import { issueThreadInteractionService } from "../services/issue-thread-interactions.js";
 import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
 
 const capturedAdapterInputs: Array<{ runId: string; [key: string]: unknown }> = [];
@@ -128,6 +131,7 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
         "heartbeat_runs",
         "agent_wakeup_requests",
         "agent_runtime_state",
+        "issues",
         "agents",
         "companies"
       RESTART IDENTITY CASCADE
@@ -168,6 +172,21 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
       permissions: {},
     });
     return { companyId, agentId };
+  }
+
+  async function seedIssue() {
+    const { companyId, agentId } = await seedCompanyAndAgent();
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Session continuity issue",
+      status: "todo",
+      workMode: "standard",
+      priority: "medium",
+      assigneeAgentId: agentId,
+    });
+    return { companyId, agentId, issueId };
   }
 
   async function seedTaskSession(input: {
@@ -388,5 +407,46 @@ describeEmbeddedPostgres("heartbeat->adapter runtime session continuity", () => 
     expect(row?.sessionParamsJson).toMatchObject({ sessionId: "stored-session-3" });
     expect(row?.sessionDisplayId).toBe("stored-session-3");
     expect(row?.lastError).toContain("network resource unavailable");
+  });
+
+  it("delivers the resolved interaction result in a resumed wake", async () => {
+    const { companyId, agentId, issueId } = await seedIssue();
+    const heartbeat = heartbeatService(db);
+    const interactions = issueThreadInteractionService(db);
+    const created = await interactions.create(
+      { id: issueId, companyId },
+      {
+        kind: "ask_user_questions",
+        continuationPolicy: "wake_assignee",
+        payload: {
+          version: 1,
+          questions: [{ id: "scope", prompt: "Choose scope", selectionMode: "single", required: true, options: [{ id: "phase-1", label: "Phase 1" }] }],
+        },
+      },
+      { agentId },
+    );
+    await interactions.answerQuestions(
+      { id: issueId, companyId },
+      created.id,
+      { answers: [{ questionId: "scope", optionIds: ["phase-1"] }], summaryMarkdown: "Proceed with phase 1." },
+      { userId: "local-board" },
+    );
+    adapterExecute.mockImplementation(async () => successResult("stored-session-1"));
+    const result = { outcome: "answered", summary: "Proceed with phase 1.", answerCount: 1 };
+    const wake = await heartbeat.wakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: "issue_commented",
+      payload: { issueId, interactionId: created.id, interactionKind: "ask_user_questions", interactionStatus: "answered", interactionResult: result, mutation: "interaction" },
+      contextSnapshot: { issueId, taskId: issueId, interactionId: created.id, interactionKind: "ask_user_questions", interactionStatus: "answered", interactionResult: result, wakeReason: "issue_commented", source: "issue.interaction.respond" },
+      requestedByActorType: "user",
+      requestedByActorId: "local-board",
+    });
+    const finished = await waitForRunToFinish(heartbeat, wake!.id);
+    expect(finished.status).toBe("succeeded");
+    const input = capturedAdapterInputs.find((entry) => entry.runId === wake!.id)!;
+    const wakeContext = (input.context as { paperclipWake: Record<string, unknown> }).paperclipWake;
+    expect(wakeContext).toMatchObject({ interactionKind: "ask_user_questions", interactionStatus: "answered", interactionResult: result });
+    expect(renderPaperclipWakePrompt(wakeContext, { resumedSession: true })).toContain("interaction result: answered (1 answer)");
   });
 });
