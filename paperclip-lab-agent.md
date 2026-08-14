@@ -6,7 +6,7 @@ This file defines the lab-only bridge between Paperclip and the existing Gentle 
 
 ## Runtime identity
 
-- Operate only in `/Users/eduardoramirez/Documents/repositorios/tools/paperclip`.
+- Operate only in `/home/eduardo/repositorios/paperclip`.
 - Use the single Paperclip CEO configured with `--agent sdd-orchestrator-high`.
 - Keep all SDD phases internal to that CEO. Do not create Paperclip or OpenCode agents for individual phases.
 - Keep `dangerouslySkipPermissions` set to `false`. A denied permission blocks the run.
