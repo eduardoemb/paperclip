@@ -14260,7 +14260,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       paperclipRuntimeSkills: runtimeSkillEntries,
     };
     const latestAgentConfigRevision = await getLatestAgentConfigRevision(agent.companyId, agent.id);
-    const sessionConfigMetadata = await buildEffectiveRunSessionConfigMetadata({
+    const sessionConfigMetadataBaseArgs = {
       adapterType: agent.adapterType,
       effectiveAdapterConfig: runtimeConfig,
       agentRuntimeConfig: agent.runtimeConfig,
@@ -14318,7 +14318,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             configRevisionAt: latestAgentConfigRevision.createdAt.toISOString(),
           }
         : null,
-    });
+    } satisfies Parameters<typeof buildEffectiveRunSessionConfigMetadata>[0];
+    let sessionConfigMetadata = await buildEffectiveRunSessionConfigMetadata(sessionConfigMetadataBaseArgs);
     const configuredModel = readConfiguredModelFromAdapterConfig(runtimeConfig);
     const wakeSessionResetReason = describeSessionResetReason(context);
     const sessionConfigFreshness = resolveTaskSessionConfigFreshness({
@@ -14749,6 +14750,28 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       }
       if (Object.keys(nextIssuePatch).length > 0) {
         await issuesSvc.update(issueId, nextIssuePatch);
+      }
+      if (shouldSwitchIssueToExistingWorkspace && nextIssuePatch.executionWorkspaceSettings) {
+        sessionConfigMetadata = await buildEffectiveRunSessionConfigMetadata({
+          ...sessionConfigMetadataBaseArgs,
+          workspaceConfig: {
+            ...sessionConfigMetadataBaseArgs.workspaceConfig,
+            issueSettings: isolatedWorkspacesEnabled
+              ? parseIssueExecutionWorkspaceSettings(nextIssuePatch.executionWorkspaceSettings)
+              : null,
+            reusableExecutionWorkspaceConfig: persistedExecutionWorkspace.config ?? null,
+            existingExecutionWorkspace: {
+              id: persistedExecutionWorkspace.id,
+              mode: persistedExecutionWorkspace.mode,
+              strategyType: persistedExecutionWorkspace.strategyType,
+              projectWorkspaceId: persistedExecutionWorkspace.projectWorkspaceId,
+              repoUrl: persistedExecutionWorkspace.repoUrl,
+              baseRef: persistedExecutionWorkspace.baseRef,
+              branchName: persistedExecutionWorkspace.branchName,
+              config: persistedExecutionWorkspace.config,
+            },
+          },
+        });
       }
     }
     if (persistedExecutionWorkspace) {

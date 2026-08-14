@@ -42,9 +42,9 @@
     "blockedReason": null
   },
   "runtime": {
-    "paperclipHome": "/Users/eduardoramirez/Library/Application Support/Paperclip/gentle-ai-sdd-lab",
+    "paperclipHome": "/home/eduardo/repositorios/paperclip/.paperclip-lab",
     "instanceId": "gentle-ai-sdd-lab",
-    "instructionsFile": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/paperclip-lab-agent.md",
+    "instructionsFile": "/home/eduardo/repositorios/paperclip/paperclip-lab-agent.md",
     "dangerouslySkipPermissions": false,
     "paperclipAgents": ["CEO"],
     "phaseExecution": "internal-to-ceo"
@@ -56,6 +56,7 @@
     "mode": "primary",
     "model": "openai/gpt-5.6-terra",
     "variant": null,
+    "extraArgs": ["--agent", "sdd-orchestrator-high"],
     "tools": [
       "apply_patch",
       "bash",
@@ -103,8 +104,8 @@
     "serversNote": "Captured on Ubuntu (eduardopc). freecad MCP from the Gate A Mac snapshot is not configured in this environment (it exists only in a config backup). User approved this drift on 2026-08-12."
   },
   "generatedPaths": {
-    "evidence": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
-    "runs": "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/runs"
+    "evidence": "/home/eduardo/repositorios/paperclip/lab/evidence",
+    "runs": "/home/eduardo/repositorios/paperclip/lab/runs"
   },
   "smoke": {
     "status": "passed",
@@ -113,9 +114,8 @@
     "uiLoopback": "http://127.0.0.1:3100 (reached)"
   },
   "rollbackAllowlist": [
-    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/evidence",
-    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/lab/runs",
-    "/Users/eduardoramirez/Documents/repositorios/tools/paperclip/.paperclip-lab",
-    "/Users/eduardoramirez/Library/Application Support/Paperclip/gentle-ai-sdd-lab"
+    "/home/eduardo/repositorios/paperclip/lab/evidence",
+    "/home/eduardo/repositorios/paperclip/lab/runs",
+    "/home/eduardo/repositorios/paperclip/.paperclip-lab"
   ]
 }

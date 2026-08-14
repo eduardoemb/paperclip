@@ -2317,6 +2317,50 @@ describe("effective run session config freshness", () => {
     expect(canonical).not.toContain("enabled");
     expect(canonical).not.toContain("openai-api-key");
   });
+
+  const baseWorkspaceConfig = {
+    requestedMode: "agent_default",
+    effectiveMode: "agent_default",
+    projectPolicy: null,
+    issueSettings: null,
+    reusableExecutionWorkspaceConfig: null,
+    existingExecutionWorkspace: null,
+  } as const;
+
+  const executionWorkspaceFixture = {
+    id: "execution-workspace-1",
+    mode: "project_workspace",
+    strategyType: "project_primary",
+    projectWorkspaceId: "workspace-1",
+    repoUrl: null,
+    baseRef: null,
+    branchName: null,
+    config: null,
+  };
+
+  it.each([
+    { name: "requested mode", next: { ...baseWorkspaceConfig, requestedMode: "isolated_workspace" } },
+    { name: "effective mode", next: { ...baseWorkspaceConfig, effectiveMode: "shared_workspace" } },
+    { name: "project policy", next: { ...baseWorkspaceConfig, projectPolicy: { enabled: true } } },
+    { name: "issue settings", next: { ...baseWorkspaceConfig, issueSettings: { mode: "shared_workspace" } } },
+    {
+      name: "reusable workspace configuration",
+      next: { ...baseWorkspaceConfig, reusableExecutionWorkspaceConfig: { strategyType: "project_primary" } },
+    },
+    { name: "existing workspace", next: { ...baseWorkspaceConfig, existingExecutionWorkspace: executionWorkspaceFixture } },
+  ])("resets when %s changes", async ({ next }) => {
+    const baseMetadata = await buildSessionConfigMetadata({ workspaceConfig: baseWorkspaceConfig });
+    const nextMetadata = await buildSessionConfigMetadata({ workspaceConfig: next });
+    const decision = resolveTaskSessionConfigFreshness({
+      hasTaskSession: true,
+      configuredModel: "gpt-5.4-mini",
+      taskSessionParams: sessionParamsWithConfigMetadata(baseMetadata),
+      configMetadata: nextMetadata,
+    });
+
+    expect(decision.reset).toBe(true);
+    expect(decision.changedCategories).toEqual(["workspaceConfig"]);
+  });
 });
 
 describe("stripConfiguredModelFromSessionParams", () => {
