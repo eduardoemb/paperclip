@@ -50,3 +50,50 @@ test("release verify workflow covers the same split test surface as stable PR ve
   assert.match(verifyWorkflow, /pnpm test:run:general -- --group/);
   assert.match(verifyWorkflow, /pnpm test:run:serialized -- --shard-index/);
 });
+
+test("release workflow gives verify_canary cancellable job-scope concurrency", () => {
+  const releaseWorkflow = readWorkflow("release.yml");
+
+  assert.match(
+    releaseWorkflow,
+    /verify_canary:\n\s+if: github\.event_name == 'push'\n\s+uses: \.\/\.github\/workflows\/release-verify\.yml\n\s+with:\n\s+ref: \$\{\{ github\.sha \}\}\n\s+concurrency:\n\s+group: release-verify-canary-\$\{\{ github\.ref \}\}\n\s+cancel-in-progress: true/,
+    "verify_canary must be cancellable when a newer main push supersedes it",
+  );
+});
+
+test("release workflow keeps publish jobs non-cancelling and gated on verification", () => {
+  const releaseWorkflow = readWorkflow("release.yml");
+
+  assert.match(
+    releaseWorkflow,
+    /publish_canary:\n\s+if: github\.event_name == 'push'\n\s+needs: verify_canary\n\s+concurrency:\n\s+group: release-publish-canary\n\s+cancel-in-progress: false/,
+    "publish_canary must depend on verify_canary and never cancel in progress",
+  );
+
+  assert.match(
+    releaseWorkflow,
+    /publish_stable:\n\s+if: github\.event_name == 'workflow_dispatch' && !inputs\.dry_run\n\s+needs: verify_stable\n\s+concurrency:\n\s+group: release-publish-stable\n\s+cancel-in-progress: false/,
+    "publish_stable must depend on verify_stable and never cancel in progress",
+  );
+});
+
+test("release workflow removes workflow-level serialization in favor of job concurrency", () => {
+  const releaseWorkflow = readWorkflow("release.yml");
+
+  assert.doesNotMatch(
+    releaseWorkflow,
+    /^concurrency:\n\s+group: release-\$\{\{ github\.event_name \}\}/m,
+    "workflow-level serialization must be removed so superseded verification can cancel",
+  );
+});
+
+test("release verify workflow runs every install with --frozen-lockfile", () => {
+  const verifyWorkflow = readWorkflow("release-verify.yml");
+
+  const installs = verifyWorkflow.match(/run: pnpm install[^\n]*/g) ?? [];
+  assert.equal(installs.length, 4, "expected the four release-verify jobs to each install dependencies");
+  for (const install of installs) {
+    assert.match(install, /--frozen-lockfile/);
+    assert.doesNotMatch(install, /--no-frozen-lockfile/);
+  }
+});
