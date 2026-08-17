@@ -14,9 +14,9 @@ Repo-side files that depend on this setup:
 
 Note:
 
-- the release workflows intentionally use `pnpm install --no-frozen-lockfile`
-- this matches the repo's current policy where `pnpm-lock.yaml` is refreshed by GitHub automation after manifest changes land on `master`
-- the publish jobs then restore `pnpm-lock.yaml` before running `scripts/release.sh`, so the release script still sees a clean worktree
+- release verification (`.github/workflows/release-verify.yml`) uses `pnpm install --frozen-lockfile`, so verification always runs against the exact committed dependency tree and fails if `pnpm-lock.yaml` drifts from the declared manifests
+- the publish jobs in `.github/workflows/release.yml` intentionally keep a mutable install, restoring `pnpm-lock.yaml` before running `scripts/release.sh`, so the release script still sees a clean worktree
+- this split keeps verification deterministic while publishing can still re-resolve the lockfile as part of the release flow
 
 ## 1. Merge the Repo Changes First
 

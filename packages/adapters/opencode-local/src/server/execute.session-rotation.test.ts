@@ -173,7 +173,8 @@ describe("opencode_local session rotation at the runtime boundary", () => {
   });
 
   it("preserves configured profile arguments and cwd when resuming", async () => {
-    const cwd = "/home/eduardo/repositorios/paperclip";
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-resume-"));
+    cleanupDirs.push(cwd);
     runAdapterExecutionTargetProcess.mockResolvedValueOnce(buildSuccessOutput("stored-session-1"));
 
     const result = await execute(buildContext(cwd, ["--agent", "sdd-orchestrator-high"]) as never);

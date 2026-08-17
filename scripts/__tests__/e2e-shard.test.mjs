@@ -89,11 +89,7 @@ test("shard arguments are validated", () => {
   }
 });
 
-test("pr.yml keeps a stable aggregate check named e2e over the shard matrix", () => {
-  // Branch protection requires a check literally named `e2e`. The shards run
-  // as `e2e shard (n/3)`, so the aggregate job below is what keeps the
-  // required-check contract intact — same pattern as the `verify` aggregate.
-  const workflow = readFileSync(prWorkflow, "utf8");
+function extractJob(workflow, wanted) {
   const jobs = new Map();
   let current = null;
   for (const line of workflow.split("\n")) {
@@ -107,20 +103,27 @@ test("pr.yml keeps a stable aggregate check named e2e over the shard matrix", ()
     if (current) jobs.get(current).push(line);
   }
   for (const [id, lines] of jobs) jobs.set(id, lines.join("\n"));
+  const job = jobs.get(wanted);
+  assert.ok(job, `pr.yml must define a \`${wanted}\` job`);
+  return job;
+}
 
-  const aggregate = jobs.get("e2e");
-  assert.ok(aggregate, "pr.yml must define an `e2e` job to satisfy branch protection");
+test("pr.yml keeps a stable aggregate check named e2e over the shard matrix", () => {
+  // Branch protection requires a check literally named `e2e`. The shards run
+  // as `e2e shard (n/3)`, so the aggregate job below is what keeps the
+  // required-check contract intact — same pattern as the `verify` aggregate.
+  const workflow = readFileSync(prWorkflow, "utf8");
+
+  const aggregate = extractJob(workflow, "e2e");
   assert.match(aggregate, /^ {4}name: e2e$/m, "the aggregate job must be named exactly `e2e`");
   assert.match(aggregate, /^ {4}if: \$\{\{ always\(\) \}\}$/m, "the aggregate must run even when a shard fails");
-  assert.match(aggregate, /^ {4}needs: \[e2e_shards\]$/m, "the aggregate must depend on the shard matrix");
   assert.match(
     aggregate,
-    /test "\$E2E_SHARDS_RESULT" = "success"/,
-    "the aggregate must fail unless every shard succeeded",
+    /^ {4}needs: \[policy, e2e_shards\]$/m,
+    "the aggregate must depend on the policy outputs and the shard matrix",
   );
 
-  const shards = jobs.get("e2e_shards");
-  assert.ok(shards, "pr.yml must define the `e2e_shards` matrix job");
+  const shards = extractJob(workflow, "e2e_shards");
   const matrixEntries = [
     ...shards.matchAll(
       /^ {10}- shard_index: (?<shardIndex>\d+)\n {12}shard_count: (?<shardCount>\d+)\n {12}shard_label: (?<shardLabel>\d+\/\d+)$/gm,
@@ -141,6 +144,33 @@ test("pr.yml keeps a stable aggregate check named e2e over the shard matrix", ()
     assert.equal(entry.shardCount, SHARD_COUNT, "each shard matrix entry must use the same SHARD_COUNT");
     assert.equal(entry.shardLabel, `${entry.shardIndex + 1}/${SHARD_COUNT}`, "each shard label must match its index");
   }
+});
+
+test("pr.yml e2e aggregate passes only on (relevant, success) or (irrelevant, skipped)", () => {
+  // The aggregate keeps the required `e2e` check contract while honoring the
+  // path gate. When paths are irrelevant the shards are skipped, and that must
+  // count as success; when they are relevant the shards must have succeeded.
+  // Any other combination (relevant-but-skipped, irrelevant-but-failed, a
+  // shard actually failing) must fail the aggregate so coverage is never lost.
+  const workflow = readFileSync(prWorkflow, "utf8");
+  const aggregate = extractJob(workflow, "e2e");
+
+  assert.match(
+    aggregate,
+    /E2E_RELEVANT: \${{ needs\.policy\.outputs\.e2e_relevant }}/,
+    "the aggregate must read the e2e relevance output",
+  );
+  assert.match(
+    aggregate,
+    /\[ "\$E2E_RELEVANT" = "true" \] && \[ "\$E2E_SHARDS_RESULT" = "success" \]/,
+    "relevant shards must succeed for the aggregate to pass",
+  );
+  assert.match(
+    aggregate,
+    /\[ "\$E2E_RELEVANT" = "false" \] && \[ "\$E2E_SHARDS_RESULT" = "skipped" \]/,
+    "irrelevant shards must be skipped for the aggregate to pass",
+  );
+  assert.match(aggregate, /exit 1/, "any other combination must fail the aggregate");
 });
 
 test("pr.yml passes the shard's spec filter to Playwright without a literal --", () => {

@@ -21,20 +21,22 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: release-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   verify_canary:
     if: github.event_name == 'push'
     uses: ./.github/workflows/release-verify.yml
     with:
       ref: ${{ github.sha }}
+    concurrency:
+      group: release-verify-canary-${{ github.ref }}
+      cancel-in-progress: true
 
   publish_canary:
     if: github.event_name == 'push'
     needs: verify_canary
+    concurrency:
+      group: release-publish-canary
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: npm-canary
@@ -148,6 +150,9 @@ jobs:
   publish_stable:
     if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
     needs: verify_stable
+    concurrency:
+      group: release-publish-stable
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: npm-stable
